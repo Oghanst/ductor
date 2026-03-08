@@ -54,6 +54,7 @@ class WebhookObserver(BaseTaskObserver):
         self._server: WebhookServer | None = None
         self._on_result: WebhookResultCallback | None = None
         self._handle_wake: WakeHandler | None = None
+        self._dingtalk_handler: Callable[[Any], Awaitable[Any]] | None = None
         self._running = False
         self._watcher = FileWatcher(
             paths.webhooks_path,
@@ -67,6 +68,12 @@ class WebhookObserver(BaseTaskObserver):
     def set_wake_handler(self, handler: WakeHandler) -> None:
         """Set the function that executes a wake turn (orchestrator.handle_webhook_wake)."""
         self._handle_wake = handler
+
+    def set_dingtalk_handler(self, handler: Callable[[Any], Awaitable[Any]] | None) -> None:
+        """Set the function that handles DingTalk webhook requests."""
+        self._dingtalk_handler = handler
+        if self._server:
+            self._server.set_dingtalk_handler(handler)
 
     async def start(self) -> None:
         """Start the webhook server and file watcher."""
@@ -88,6 +95,8 @@ class WebhookObserver(BaseTaskObserver):
 
         self._server = WebhookServer(self._config.webhooks, self._manager)
         self._server.set_dispatch_handler(self._dispatch)
+        if self._dingtalk_handler is not None:
+            self._server.set_dingtalk_handler(self._dingtalk_handler)
 
         try:
             await self._server.start()

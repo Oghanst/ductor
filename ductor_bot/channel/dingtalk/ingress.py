@@ -48,6 +48,7 @@ class ChannelInboundEvent:
     media: list[InboundMedia] = field(default_factory=list)
     mentions: list[str] = field(default_factory=list)
     reply_to_event_id: str | None = None
+    reply_webhook: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -266,10 +267,14 @@ def normalize_dingtalk_event(
 
     thread_id = _first_string(
         raw,
-        "sessionWebhook",
         "threadId",
-        "session_webhook",
         "thread_id",
+    )
+
+    reply_webhook = _first_string(
+        raw,
+        "sessionWebhook",
+        "session_webhook",
     )
 
     text_value = _extract_text(raw)
@@ -294,6 +299,7 @@ def normalize_dingtalk_event(
         mentions=mentions,
         media=[],
         reply_to_event_id=reply_to,
+        reply_webhook=reply_webhook or None,
         raw=_redact_raw(raw),
     )
 
@@ -471,6 +477,8 @@ def _redact_raw(raw: dict[str, Any]) -> dict[str, Any]:
         "access_token",
         "accessToken",
         "token",
+        "sessionWebhook",
+        "session_webhook",
     }
     sanitized: dict[str, Any] = {}
     for key, value in raw.items():

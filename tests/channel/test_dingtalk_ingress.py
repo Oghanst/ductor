@@ -12,6 +12,7 @@ from ductor_bot.channel.dingtalk.ingress import (
     validate_timestamp_window,
     verify_dingtalk_signature,
 )
+from ductor_bot.channel.dingtalk.session import build_dingtalk_session_key
 
 
 def test_signature_timestamp_mode() -> None:
@@ -66,6 +67,36 @@ def test_normalize_event_basic() -> None:
     assert event.is_group is True
     assert event.text == "hello"
     assert event.mentions == ["user-2"]
+
+
+def test_normalize_event_reply_webhook() -> None:
+    raw = {
+        "eventId": "evt-2",
+        "createTime": 1710000000123,
+        "senderStaffId": "user-1",
+        "conversationId": "chat-1",
+        "sessionWebhook": "https://example.invalid/session",
+        "text": {"content": "ping"},
+    }
+
+    event = normalize_dingtalk_event(raw, default_tenant="corp-1", now=1710000000.0)
+
+    assert event.reply_webhook == "https://example.invalid/session"
+
+
+def test_build_session_key_stable_int() -> None:
+    raw = {
+        "eventId": "evt-3",
+        "createTime": 1710000000123,
+        "senderStaffId": "user-1",
+        "conversationId": "chat-xyz",
+        "text": {"content": "hello"},
+    }
+
+    event = normalize_dingtalk_event(raw, default_tenant="corp-1", now=1710000000.0)
+    key = build_dingtalk_session_key(event)
+
+    assert isinstance(key.chat_id, int)
 
 
 def test_ingress_dedup_skips_second_delivery() -> None:

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 WebhookDispatchCallback = Callable[[str, dict[str, Any]], Awaitable["WebhookResult"]]
+DingTalkDispatchCallback = Callable[[web.Request], Awaitable[web.Response]]
 
 
 class WebhookServer:
@@ -40,6 +41,7 @@ class WebhookServer:
         self._manager = manager
         self._rate_limiter = RateLimiter(config.rate_limit_per_minute)
         self._dispatch: WebhookDispatchCallback | None = None
+        self._dingtalk_handler: DingTalkDispatchCallback | None = None
         self._runner: web.AppRunner | None = None
         self._background_tasks: set[asyncio.Task[None]] = set()
 
@@ -47,11 +49,16 @@ class WebhookServer:
         """Set the callback invoked for each valid webhook request."""
         self._dispatch = handler
 
+    def set_dingtalk_handler(self, handler: DingTalkDispatchCallback | None) -> None:
+        """Set the callback invoked for DingTalk webhook requests."""
+        self._dingtalk_handler = handler
+
     async def start(self) -> None:
         """Create the aiohttp app and start listening."""
         app = web.Application(client_max_size=self._config.max_body_bytes)
         app.router.add_get("/health", self._handle_health)
         app.router.add_post("/hooks/{hook_id}", self._handle_hook)
+        app.router.add_post("/channels/dingtalk/webhook", self._handle_dingtalk)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self._config.host, self._config.port)
@@ -160,6 +167,13 @@ class WebhookServer:
             task.add_done_callback(self._background_tasks.discard)
 
         return web.json_response({"accepted": True, "hook_id": hook_id}, status=202)
+
+    async def _handle_dingtalk(self, request: web.Request) -> web.Response:
+        set_log_context(operation="wh")
+        if self._dingtalk_handler is None:
+            logger.warning("DingTalk webhook received but handler not configured")
+            return web.json_response({"error": "dingtalk_disabled"}, status=404)
+        return await self._dingtalk_handler(request)
 
     async def _safe_dispatch(self, hook_id: str, payload: dict[str, Any]) -> None:
         """Run dispatch in a task with exception protection."""

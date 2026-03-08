@@ -444,6 +444,28 @@ class Orchestrator:
         self._observers.wire_to_bus(bus, wake_handler=wake_handler)
         bus.set_injector(self)
 
+    def configure_dingtalk_ingress(self) -> None:
+        """Wire DingTalk webhook ingress into the webhook server, if enabled."""
+        if not self._config.dingtalk.enabled:
+            return
+        if not self._config.webhooks.enabled:
+            logger.warning("DingTalk ingress requires webhooks.enabled; skipping")
+            return
+        if self._observers.webhook is None:
+            logger.warning("Webhook observer not initialized; skipping DingTalk ingress")
+            return
+
+        from ductor_bot.channel.dingtalk.transport import DingTalkTransport
+        from ductor_bot.channel.dingtalk.webhook import DingTalkWebhookHandler
+
+        handler = DingTalkWebhookHandler(
+            self._config.dingtalk,
+            orchestrator=self,
+            transport=DingTalkTransport(self._config.dingtalk),
+        )
+        self._observers.webhook.set_dingtalk_handler(handler.handle)
+        logger.info("DingTalk ingress wired on /channels/dingtalk/webhook")
+
     async def handle_heartbeat(self, key: SessionKey) -> str | None:
         """Run a heartbeat turn in the main session. Returns alert text or None."""
         logger.debug("Heartbeat flow starting")
@@ -642,6 +664,9 @@ class Orchestrator:
 
         if "model" in hot:
             self._providers.refresh_known_model_ids()
+
+        if "dingtalk" in hot or "webhooks" in hot:
+            self.configure_dingtalk_ingress()
 
         handler = getattr(self, "_config_hot_reload_handler", None)
         if handler is not None:

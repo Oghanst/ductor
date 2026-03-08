@@ -98,6 +98,7 @@ async def create_orchestrator(
     )
     orch._providers._codex_cache_fn = lambda: orch._observers.codex_cache
     await orch._observers.start_all(docker_container=docker_container)
+    orch.configure_dingtalk_ingress()
 
     # Direct API server (WebSocket, designed for Tailscale)
     if config.api.enabled:
