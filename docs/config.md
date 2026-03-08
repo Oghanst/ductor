@@ -54,7 +54,9 @@ API config persistence note:
 | `reasoning_effort` | `str` | `"medium"` | Default Codex reasoning level |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for Telegram sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
+| `channels` | `ChannelsConfig` | see below | Message delivery channel list (`telegram` always active in current runtime, `dingtalk` optional placeholder) |
 | `telegram_token` | `str` | `""` | Telegram bot token |
+| `dingtalk` | `DingTalkConfig` | see below | DingTalk channel scaffold config (phase-1 placeholder) |
 | `allowed_user_ids` | `list[int]` | `[]` | Telegram user allowlist (applies in both private and group chats) |
 | `allowed_group_ids` | `list[int]` | `[]` | Telegram group allowlist (which groups the bot can operate in; default `[]` = no groups, fail-closed). In groups, both the group and the user must be allowlisted |
 | `group_mention_only` | `bool` | `false` | In allowlisted group chats, only process messages that explicitly mention or reply to the bot (mention-gating filter; not an auth bypass) |
@@ -81,6 +83,23 @@ Used by `CLIServiceConfig` for main-chat calls.
 Automation note:
 
 - cron/webhook `cron_task` runs use task-level `cli_parameters` from `cron_jobs.json` / `webhooks.json` (no merge with global `cli_parameters`).
+
+## `ChannelsConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `list[str]` | `["telegram"]` | Valid values: `telegram`, `dingtalk`; unknown names are rejected at config-parse time |
+
+## `DingTalkConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Enables DingTalk placeholder transport registration |
+| `app_key` | `str` | `""` | Reserved for OpenAPI app credentials |
+| `app_secret` | `str` | `""` | Reserved for OpenAPI app credentials |
+| `agent_id` | `str` | `""` | Reserved for bot agent routing |
+| `robot_code` | `str` | `""` | Reserved for stream-mode robot |
+| `webhook_secret` | `str` | `""` | Reserved for webhook signature verification |
 
 ## `TimeoutConfig`
 
