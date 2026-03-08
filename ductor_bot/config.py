@@ -201,6 +201,16 @@ class DingTalkConfig(BaseModel):
     agent_id: str = ""
     robot_code: str = ""
     webhook_secret: str = ""
+    corp_id: str = ""
+    signing_secret: str = ""
+    verify_timestamp_window_sec: int = 300
+    dedup_ttl_sec: int = 120
+    dm_policy: str = "allowlist"
+    group_policy: str = "allowlist"
+    allow_users: list[str] = Field(default_factory=list)
+    allow_groups: list[str] = Field(default_factory=list)
+    signature_mode: str = "timestamp"
+    signature_encoding: str = "base64"
 
 
 def deep_merge_config(

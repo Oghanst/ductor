@@ -27,3 +27,8 @@
 - Added verification:
   - unit tests in `tests/channel/test_runtime.py`.
   - self-check script: `python -m ductor_bot.channel.selfcheck`.
+
+## Round-2 Delivered (2026-03-08)
+- Added DingTalk inbound normalization + signature verification utilities.
+- Introduced ingress pipeline with dedup + allowlist policy checks.
+- Added unit tests for signature, timestamp validation, normalization, and dedup.
