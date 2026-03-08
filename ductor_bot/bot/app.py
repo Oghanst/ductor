@@ -63,6 +63,7 @@ from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
+from ductor_bot.channel.runtime import build_bus_transports
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
@@ -156,9 +157,8 @@ class TelegramBot:
         self._lock_pool = LockPool()
         self._bus = MessageBus(lock_pool=self._lock_pool)
 
-        from ductor_bot.bus.telegram_transport import TelegramTransport
-
-        self._bus.register_transport(TelegramTransport(self))
+        for transport in build_bus_transports(config, self):
+            self._bus.register_transport(transport)
         self._sequential = SequentialMiddleware(
             lock_pool=self._lock_pool, topic_names=self._topic_names
         )

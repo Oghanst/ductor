@@ -165,6 +165,44 @@ class ApiConfig(BaseModel):
     allow_public: bool = False
 
 
+_SUPPORTED_CHANNELS: frozenset[str] = frozenset({"telegram", "dingtalk"})
+
+
+class ChannelsConfig(BaseModel):
+    """Enabled channel transports for message delivery."""
+
+    enabled: list[str] = Field(default_factory=lambda: ["telegram"])
+
+    @field_validator("enabled")
+    @classmethod
+    def _validate_enabled_channels(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw_name in value:
+            name = str(raw_name).strip().lower()
+            if not name:
+                continue
+            if name not in _SUPPORTED_CHANNELS:
+                msg = (
+                    f"Unsupported channel '{raw_name}'. "
+                    f"Supported channels: {', '.join(sorted(_SUPPORTED_CHANNELS))}"
+                )
+                raise ValueError(msg)
+            if name not in normalized:
+                normalized.append(name)
+        return normalized or ["telegram"]
+
+
+class DingTalkConfig(BaseModel):
+    """DingTalk channel scaffold settings."""
+
+    enabled: bool = False
+    app_key: str = ""
+    app_secret: str = ""
+    agent_id: str = ""
+    robot_code: str = ""
+    webhook_secret: str = ""
+
+
 def deep_merge_config(
     user: dict[str, object],
     defaults: dict[str, object],
@@ -238,6 +276,8 @@ class AgentConfig(BaseModel):
     cli_parameters: CLIParametersConfig = Field(default_factory=CLIParametersConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
     user_timezone: str = ""
     group_mention_only: bool = False
     telegram_token: str = ""

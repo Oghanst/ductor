@@ -33,6 +33,8 @@ def test_agent_config_defaults() -> None:
     assert cfg.gemini_api_key is None
     assert cfg.telegram_token == ""
     assert cfg.allowed_user_ids == []
+    assert cfg.channels.enabled == ["telegram"]
+    assert cfg.dingtalk.enabled is False
 
 
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:
@@ -131,3 +133,13 @@ def test_docker_config_fields() -> None:
     d = DockerConfig(enabled=True, image_name="custom")
     assert d.enabled is True
     assert d.image_name == "custom"
+
+
+def test_channels_config_normalizes_and_deduplicates() -> None:
+    cfg = AgentConfig(channels={"enabled": [" Telegram ", "dingtalk", "telegram"]})
+    assert cfg.channels.enabled == ["telegram", "dingtalk"]
+
+
+def test_channels_config_rejects_unknown_channel() -> None:
+    with pytest.raises(ValidationError, match="Unsupported channel"):
+        AgentConfig(channels={"enabled": ["slack"]})

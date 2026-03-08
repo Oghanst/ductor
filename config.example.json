@@ -15,7 +15,18 @@
     "file_access": "all",
     "gemini_api_key": "null",
     "user_timezone": "",
+    "channels": {
+        "enabled": ["telegram"]
+    },
     "telegram_token": "YOUR_BOT_TOKEN_HERE",
+    "dingtalk": {
+        "enabled": false,
+        "app_key": "",
+        "app_secret": "",
+        "agent_id": "",
+        "robot_code": "",
+        "webhook_secret": ""
+    },
     "allowed_user_ids": [],
     "allowed_group_ids": [],
     "streaming": {
