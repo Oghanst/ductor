@@ -84,6 +84,41 @@ def test_normalize_event_reply_webhook() -> None:
     assert event.reply_webhook == "https://example.invalid/session"
 
 
+def test_normalize_event_thread_reply_mentions_media() -> None:
+    raw = {
+        "eventId": "evt-4",
+        "createTime": 1710000000123,
+        "senderStaffId": "user-1",
+        "conversationId": "chat-1",
+        "threadId": "thread-9",
+        "replyMsgId": "reply-1",
+        "msgType": "image",
+        "mediaId": "media-1",
+        "fileName": "photo.png",
+        "mediaUrl": "https://example.invalid/media-1",
+        "atUserIds": ["user-2", "user-3"],
+        "attachments": [
+            {"mediaId": "media-2", "mediaType": "file", "fileName": "doc.pdf"},
+        ],
+    }
+
+    event = normalize_dingtalk_event(raw, default_tenant="corp-1", now=1710000000.0)
+
+    assert event.thread_id == "thread-9"
+    assert event.reply_to_event_id == "reply-1"
+    assert event.mentions == ["user-2", "user-3"]
+    assert {item.media_id for item in event.media} == {"media-1", "media-2"}
+
+    primary = next(item for item in event.media if item.media_id == "media-1")
+    assert primary.media_type == "image"
+    assert primary.filename == "photo.png"
+    assert primary.url == "https://example.invalid/media-1"
+
+    attachment = next(item for item in event.media if item.media_id == "media-2")
+    assert attachment.media_type == "file"
+    assert attachment.filename == "doc.pdf"
+
+
 def test_build_session_key_stable_int() -> None:
     raw = {
         "eventId": "evt-3",

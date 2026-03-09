@@ -269,6 +269,8 @@ def normalize_dingtalk_event(
         raw,
         "threadId",
         "thread_id",
+        "topicId",
+        "topic_id",
     )
 
     reply_webhook = _first_string(
@@ -279,8 +281,19 @@ def normalize_dingtalk_event(
 
     text_value = _extract_text(raw)
     mentions = _extract_mentions(raw)
+    media = _extract_media(raw)
     is_group = _extract_is_group(raw)
-    reply_to = _first_string(raw, "replyMsgId", "reply_msg_id", "replyMessageId", "reply_message_id")
+    reply_to = _first_string(
+        raw,
+        "replyMsgId",
+        "reply_msg_id",
+        "replyMessageId",
+        "reply_message_id",
+        "parentMsgId",
+        "parent_msg_id",
+        "parentMessageId",
+        "parent_message_id",
+    )
 
     if not event_id:
         event_id = _fallback_event_id(raw, tenant_id, chat_id, user_id, text_value, event_ts)
@@ -297,7 +310,7 @@ def normalize_dingtalk_event(
         is_group=is_group,
         text=text_value,
         mentions=mentions,
-        media=[],
+        media=media,
         reply_to_event_id=reply_to,
         reply_webhook=reply_webhook or None,
         raw=_redact_raw(raw),
@@ -421,7 +434,7 @@ def _extract_text(raw: dict[str, Any]) -> str:
 
 def _extract_mentions(raw: dict[str, Any]) -> list[str]:
     mentions: list[str] = []
-    for key in ("atUsers", "atUsersIds", "atUserIds", "at_user_ids"):
+    for key in ("atUsers", "atUsersIds", "atUserIds", "at_user_ids", "atOpenIds", "at_open_ids"):
         value = raw.get(key)
         if isinstance(value, list):
             for item in value:
@@ -432,6 +445,73 @@ def _extract_mentions(raw: dict[str, Any]) -> list[str]:
                 elif item:
                     mentions.append(str(item))
     return mentions
+
+
+def _extract_media(raw: dict[str, Any]) -> list[InboundMedia]:
+    media: list[InboundMedia] = []
+    seen: set[str] = set()
+
+    def _append(payload: dict[str, Any]) -> None:
+        media_id = _first_string(
+            payload,
+            "mediaId",
+            "media_id",
+            "fileId",
+            "file_id",
+            "imageId",
+            "image_id",
+            "audioId",
+            "audio_id",
+        )
+        if not media_id:
+            return
+        media_type = (
+            _first_string(
+                payload,
+                "msgType",
+                "msg_type",
+                "mediaType",
+                "media_type",
+                "fileType",
+                "file_type",
+                "type",
+            )
+            or "file"
+        )
+        key = f"{media_type}:{media_id}"
+        if key in seen:
+            return
+        seen.add(key)
+        filename = _first_string(payload, "fileName", "filename", "file_name", "name", "title")
+        url = _first_string(
+            payload,
+            "mediaUrl",
+            "mediaURL",
+            "media_url",
+            "url",
+            "downloadUrl",
+            "download_url",
+        )
+        media.append(
+            InboundMedia(
+                media_type=media_type,
+                media_id=media_id,
+                filename=filename,
+                url=url,
+            )
+        )
+
+    if isinstance(raw, dict):
+        _append(raw)
+        for key in ("attachments", "media", "files", "images", "file", "image", "audio"):
+            value = raw.get(key)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        _append(item)
+            elif isinstance(value, dict):
+                _append(value)
+    return media
 
 
 def _extract_is_group(raw: dict[str, Any]) -> bool:
