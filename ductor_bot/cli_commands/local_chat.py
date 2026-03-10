@@ -47,6 +47,7 @@ class LocalChatSettings:
     ductor_home: Path
     dry_run: bool
     probe: bool
+    reset_state: bool
 
     @property
     def ws_url(self) -> str:
@@ -117,6 +118,7 @@ def print_local_help() -> None:
     table.add_row("--home <path>", "Use alternate DUCTOR_HOME")
     table.add_row("--dry-run", "Print resolved settings and exit")
     table.add_row("--probe", "Connect, authenticate, print status, then exit")
+    table.add_row("--reset-state", "Clear persisted local chat state")
     _console.print(
         Panel(table, title="[bold]Local Chat Commands[/bold]", border_style="blue"),
     )
@@ -215,6 +217,17 @@ def _save_state(paths: DuctorPaths, *, host: str, port: int, chat_id: int | None
         return
 
 
+def _clear_state(paths: DuctorPaths) -> bool:
+    path = _state_path(paths)
+    try:
+        path.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
 def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
     if "--help" in rest or "-h" in rest:
         print_local_help()
@@ -234,6 +247,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
 
     dry_run = _pop_flag(rest, "--dry-run")
     probe = _pop_flag(rest, "--probe")
+    reset_state = _pop_flag(rest, "--reset-state")
 
     if rest:
         _console.print(f"[bold red]Unknown arguments:[/bold red] {' '.join(rest)}")
@@ -249,6 +263,12 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
 
     ductor_home = Path(home_raw).expanduser() if home_raw else None
     paths = resolve_paths(ductor_home=ductor_home)
+    if reset_state:
+        cleared = _clear_state(paths)
+        if cleared:
+            _console.print(f"[green]Cleared local chat state:[/green] {_state_path(paths)}")
+        else:
+            _console.print(f"[yellow]No local chat state to clear:[/yellow] {_state_path(paths)}")
     api_cfg = _load_api_config(paths)
     state = _load_state(paths)
 
@@ -296,6 +316,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         ductor_home=paths.ductor_home,
         dry_run=dry_run,
         probe=probe,
+        reset_state=reset_state,
     )
 
 
