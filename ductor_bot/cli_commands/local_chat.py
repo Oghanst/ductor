@@ -23,6 +23,7 @@ _console = Console()
 _LOCAL_SUBCOMMANDS = frozenset({"chat"})
 _STATE_FILENAME = "local_chat.json"
 _MAX_MESSAGES = 50
+_AUTH_TIMEOUT_SECONDS = 10
 
 
 @dataclass(slots=True)
@@ -490,7 +491,15 @@ async def _probe(settings: LocalChatSettings) -> None:
             e2e = E2ESession()
             await ws.send_json(_build_auth_payload(settings, e2e.local_pk_b64))
             try:
-                auth_resp = await ws.receive_json()
+                auth_resp = await asyncio.wait_for(
+                    ws.receive_json(),
+                    timeout=_AUTH_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                _console.print(
+                    f"[bold red]Auth response timeout ({_AUTH_TIMEOUT_SECONDS}s).[/bold red]",
+                )
+                return
             except Exception as exc:
                 _console.print(f"[bold red]Auth response error:[/bold red] {exc}")
                 return
@@ -531,7 +540,15 @@ async def _run_chat(settings: LocalChatSettings) -> None:
             e2e = E2ESession()
             await ws.send_json(_build_auth_payload(settings, e2e.local_pk_b64))
             try:
-                auth_resp = await ws.receive_json()
+                auth_resp = await asyncio.wait_for(
+                    ws.receive_json(),
+                    timeout=_AUTH_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                _console.print(
+                    f"[bold red]Auth response timeout ({_AUTH_TIMEOUT_SECONDS}s).[/bold red]",
+                )
+                return
             except Exception as exc:
                 _console.print(f"[bold red]Auth response error:[/bold red] {exc}")
                 return
