@@ -54,3 +54,6 @@ Preflight settings without connecting:
 Probe the API (connect + auth, then exit):
 
 `ductor local chat --probe --port 8841 --home ~/.ductor-local-chat-test`
+
+On success, the probe also persists the resolved host/port/chat_id/channel_id
+to `local_chat.json` under the selected `DUCTOR_HOME`.

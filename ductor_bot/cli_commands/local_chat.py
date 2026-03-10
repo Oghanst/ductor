@@ -454,6 +454,16 @@ async def _probe(settings: LocalChatSettings) -> None:
                 _console.print("[bold red]Auth response missing e2e_pk.[/bold red]")
                 return
             e2e.set_remote_key(e2e_pk)
+            chat_id = auth_resp.get("chat_id")
+            channel_id = auth_resp.get("channel_id")
+            paths = resolve_paths(ductor_home=settings.ductor_home)
+            _save_state(
+                paths,
+                host=settings.host,
+                port=settings.port,
+                chat_id=chat_id if isinstance(chat_id, int) else None,
+                channel_id=channel_id if isinstance(channel_id, int) else None,
+            )
             _print_probe(settings, auth_resp)
 
 async def _run_chat(settings: LocalChatSettings) -> None:
@@ -472,11 +482,19 @@ async def _run_chat(settings: LocalChatSettings) -> None:
         async with ws:
             e2e = E2ESession()
             await ws.send_json(_build_auth_payload(settings, e2e.local_pk_b64))
-            auth_resp = await ws.receive_json()
-            if auth_resp.get("type") != "auth_ok":
+            try:
+                auth_resp = await ws.receive_json()
+            except Exception as exc:
+                _console.print(f"[bold red]Auth response error:[/bold red] {exc}")
+                return
+            if not isinstance(auth_resp, dict) or auth_resp.get("type") != "auth_ok":
                 _console.print(f"[bold red]Auth failed:[/bold red] {auth_resp}")
                 return
-            e2e.set_remote_key(str(auth_resp["e2e_pk"]))
+            e2e_pk = auth_resp.get("e2e_pk")
+            if not isinstance(e2e_pk, str):
+                _console.print("[bold red]Auth response missing e2e_pk.[/bold red]")
+                return
+            e2e.set_remote_key(e2e_pk)
 
             runtime.chat_id = auth_resp.get("chat_id")
             runtime.channel_id = auth_resp.get("channel_id")
