@@ -46,6 +46,7 @@ class LocalChatSettings:
     channel_id: int | None
     ductor_home: Path
     dry_run: bool
+    probe: bool
 
     @property
     def ws_url(self) -> str:
@@ -115,6 +116,7 @@ def print_local_help() -> None:
     table.add_row("--channel-id <id>", "Override channel_id (topic)")
     table.add_row("--home <path>", "Use alternate DUCTOR_HOME")
     table.add_row("--dry-run", "Print resolved settings and exit")
+    table.add_row("--probe", "Connect, authenticate, print status, then exit")
     _console.print(
         Panel(table, title="[bold]Local Chat Commands[/bold]", border_style="blue"),
     )
@@ -231,6 +233,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         return None
 
     dry_run = _pop_flag(rest, "--dry-run")
+    probe = _pop_flag(rest, "--probe")
 
     if rest:
         _console.print(f"[bold red]Unknown arguments:[/bold red] {' '.join(rest)}")
@@ -264,6 +267,10 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
     if resolved_channel_id is None and state and state.channel_id is not None:
         resolved_channel_id = state.channel_id
 
+    if dry_run and probe:
+        _console.print("[bold red]Choose either --dry-run or --probe, not both.[/bold red]")
+        return None
+
     if not token:
         if not dry_run:
             _console.print("[bold red]API token not found.[/bold red]")
@@ -288,6 +295,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         channel_id=resolved_channel_id,
         ductor_home=paths.ductor_home,
         dry_run=dry_run,
+        probe=probe,
     )
 
 
@@ -312,6 +320,10 @@ def local_chat(rest: list[str]) -> None:
 
     if settings.dry_run:
         _print_dry_run(settings)
+        return
+
+    if settings.probe:
+        asyncio.run(_probe(settings))
         return
 
     asyncio.run(_run_chat(settings))
@@ -402,6 +414,47 @@ def _print_dry_run(settings: LocalChatSettings) -> None:
     status.add_row("State File", str(_state_path(paths)))
     _console.print(Panel(status, title="[bold]Local Chat Dry Run[/bold]", border_style="green"))
 
+
+def _print_probe(settings: LocalChatSettings, auth_resp: dict[str, Any]) -> None:
+    status = Table(show_header=False, box=None, padding=(0, 2))
+    status.add_column(style="bold cyan", min_width=18)
+    status.add_column()
+    status.add_row("Endpoint", settings.ws_url)
+    status.add_row("Chat ID", str(auth_resp.get("chat_id") or "default"))
+    status.add_row("Channel ID", str(auth_resp.get("channel_id") or "none"))
+    status.add_row("Provider", str(auth_resp.get("active_provider") or "unknown"))
+    status.add_row("Model", str(auth_resp.get("active_model") or "unknown"))
+    status.add_row("Status", "auth_ok")
+    _console.print(Panel(status, title="[bold]Local Chat Probe[/bold]", border_style="green"))
+
+
+async def _probe(settings: LocalChatSettings) -> None:
+    from ductor_bot.api.crypto import E2ESession
+
+    async with ClientSession() as session:
+        try:
+            ws = await session.ws_connect(settings.ws_url)
+        except Exception as exc:
+            _console.print(f"[bold red]Failed to connect:[/bold red] {exc}")
+            return
+
+        async with ws:
+            e2e = E2ESession()
+            await ws.send_json(_build_auth_payload(settings, e2e.local_pk_b64))
+            try:
+                auth_resp = await ws.receive_json()
+            except Exception as exc:
+                _console.print(f"[bold red]Auth response error:[/bold red] {exc}")
+                return
+            if not isinstance(auth_resp, dict) or auth_resp.get("type") != "auth_ok":
+                _console.print(f"[bold red]Auth failed:[/bold red] {auth_resp}")
+                return
+            e2e_pk = auth_resp.get("e2e_pk")
+            if not isinstance(e2e_pk, str):
+                _console.print("[bold red]Auth response missing e2e_pk.[/bold red]")
+                return
+            e2e.set_remote_key(e2e_pk)
+            _print_probe(settings, auth_resp)
 
 async def _run_chat(settings: LocalChatSettings) -> None:
     from ductor_bot.api.crypto import E2ESession

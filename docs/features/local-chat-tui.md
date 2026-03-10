@@ -50,3 +50,7 @@ Ensure the API token is available in the API config (or pass `--token`).
 Preflight settings without connecting:
 
 `ductor local chat --dry-run --port 8841 --home ~/.ductor-local-chat-test`
+
+Probe the API (connect + auth, then exit):
+
+`ductor local chat --probe --port 8841 --home ~/.ductor-local-chat-test`
