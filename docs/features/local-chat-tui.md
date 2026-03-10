@@ -40,3 +40,9 @@ backup port:
 - `--home ~/.ductor-local-chat-test`
 - `--port 8841`
 
+## Usage (draft)
+Typical usage with an isolated home and backup port:
+
+`ductor local chat --port 8841 --home ~/.ductor-local-chat-test`
+
+Ensure the API token is available in the API config (or pass `--token`).

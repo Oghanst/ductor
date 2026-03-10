@@ -35,6 +35,7 @@ from ductor_bot.cli_commands.lifecycle import (
 from ductor_bot.cli_commands.lifecycle import (
     upgrade as _upgrade,
 )
+from ductor_bot.cli_commands.local_chat import cmd_local as _cmd_local
 from ductor_bot.cli_commands.service import cmd_service as _cmd_service
 from ductor_bot.cli_commands.status import (
     print_status as _print_status,
@@ -260,6 +261,7 @@ _COMMANDS: dict[str, str] = {
     "docker": "docker",
     "api": "api",
     "agents": "agents",
+    "local": "local",
 }
 
 _Action = Callable[[], None]
@@ -289,6 +291,7 @@ def main() -> None:
         "docker": lambda: _cmd_docker(args),
         "api": lambda: _cmd_api(args),
         "agents": lambda: _cmd_agents(args),
+        "local": lambda: _cmd_local(args),
     }
 
     handler = dispatch.get(action) if action else None
