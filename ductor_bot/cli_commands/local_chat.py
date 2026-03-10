@@ -118,7 +118,7 @@ def print_local_help() -> None:
     table.add_row("--home <path>", "Use alternate DUCTOR_HOME")
     table.add_row("--dry-run", "Print resolved settings and exit")
     table.add_row("--probe", "Connect, authenticate, print status, then exit")
-    table.add_row("--reset-state", "Clear persisted local chat state")
+    table.add_row("--reset-state", "Clear persisted local chat state and exit")
     table.add_row("--show-state", "Show persisted local chat state and exit")
     _console.print(
         Panel(table, title="[bold]Local Chat Commands[/bold]", border_style="blue"),
@@ -265,12 +265,16 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
 
     ductor_home = Path(home_raw).expanduser() if home_raw else None
     paths = resolve_paths(ductor_home=ductor_home)
+    if reset_state and (dry_run or probe or show_state):
+        _console.print("[bold red]Choose one of --reset-state, --show-state, --dry-run, or --probe.[/bold red]")
+        return None
     if reset_state:
         cleared = _clear_state(paths)
         if cleared:
             _console.print(f"[green]Cleared local chat state:[/green] {_state_path(paths)}")
         else:
             _console.print(f"[yellow]No local chat state to clear:[/yellow] {_state_path(paths)}")
+        return None
     api_cfg = _load_api_config(paths)
     state = _load_state(paths)
 

@@ -58,7 +58,7 @@ Probe the API (connect + auth, then exit):
 On success, the probe also persists the resolved host/port/chat_id/channel_id
 to `local_chat.json` under the selected `DUCTOR_HOME`.
 
-Clear persisted state (optional):
+Clear persisted state (optional, exits immediately and does not require a token):
 
 `ductor local chat --reset-state --home ~/.ductor-local-chat-test`
 
