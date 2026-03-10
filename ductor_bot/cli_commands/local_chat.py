@@ -119,6 +119,7 @@ def print_local_help() -> None:
     table.add_row("--dry-run", "Print resolved settings and exit")
     table.add_row("--probe", "Connect, authenticate, print status, then exit")
     table.add_row("--reset-state", "Clear persisted local chat state")
+    table.add_row("--show-state", "Show persisted local chat state and exit")
     _console.print(
         Panel(table, title="[bold]Local Chat Commands[/bold]", border_style="blue"),
     )
@@ -248,6 +249,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
     dry_run = _pop_flag(rest, "--dry-run")
     probe = _pop_flag(rest, "--probe")
     reset_state = _pop_flag(rest, "--reset-state")
+    show_state = _pop_flag(rest, "--show-state")
 
     if rest:
         _console.print(f"[bold red]Unknown arguments:[/bold red] {' '.join(rest)}")
@@ -289,6 +291,12 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
 
     if dry_run and probe:
         _console.print("[bold red]Choose either --dry-run or --probe, not both.[/bold red]")
+        return None
+    if show_state and (dry_run or probe):
+        _console.print("[bold red]Choose one of --show-state, --dry-run, or --probe.[/bold red]")
+        return None
+    if show_state:
+        _print_state(paths, state)
         return None
 
     if not token:
@@ -434,6 +442,21 @@ def _print_dry_run(settings: LocalChatSettings) -> None:
     status.add_row("DUCTOR_HOME", str(settings.ductor_home))
     status.add_row("State File", str(_state_path(paths)))
     _console.print(Panel(status, title="[bold]Local Chat Dry Run[/bold]", border_style="green"))
+
+
+def _print_state(paths: DuctorPaths, state: LocalChatState | None) -> None:
+    status = Table(show_header=False, box=None, padding=(0, 2))
+    status.add_column(style="bold cyan", min_width=18)
+    status.add_column()
+    status.add_row("State File", str(_state_path(paths)))
+    if state is None:
+        status.add_row("Status", "missing")
+    else:
+        status.add_row("Host", state.host)
+        status.add_row("Port", str(state.port))
+        status.add_row("Chat ID", str(state.chat_id or "default"))
+        status.add_row("Channel ID", str(state.channel_id or "none"))
+    _console.print(Panel(status, title="[bold]Local Chat State[/bold]", border_style="green"))
 
 
 def _print_probe(settings: LocalChatSettings, auth_resp: dict[str, Any]) -> None:

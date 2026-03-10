@@ -61,3 +61,7 @@ to `local_chat.json` under the selected `DUCTOR_HOME`.
 Clear persisted state (optional):
 
 `ductor local chat --reset-state --home ~/.ductor-local-chat-test`
+
+Inspect persisted state (optional):
+
+`ductor local chat --show-state --home ~/.ductor-local-chat-test`
