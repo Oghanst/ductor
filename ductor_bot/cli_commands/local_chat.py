@@ -23,7 +23,7 @@ _console = Console()
 _LOCAL_SUBCOMMANDS = frozenset({"chat"})
 _STATE_FILENAME = "local_chat.json"
 _MAX_MESSAGES = 50
-_AUTH_TIMEOUT_SECONDS = 10
+_DEFAULT_AUTH_TIMEOUT_SECONDS = 10
 
 
 @dataclass(slots=True)
@@ -49,6 +49,7 @@ class LocalChatSettings:
     dry_run: bool
     probe: bool
     reset_state: bool
+    auth_timeout: int
 
     @property
     def ws_url(self) -> str:
@@ -121,6 +122,7 @@ def print_local_help() -> None:
     table.add_row("--probe", "Connect, authenticate, print status, then exit")
     table.add_row("--reset-state", "Clear persisted local chat state and exit")
     table.add_row("--show-state", "Show persisted local chat state and exit")
+    table.add_row("--auth-timeout <seconds>", "Auth response timeout (default 10)")
     _console.print(
         Panel(table, title="[bold]Local Chat Commands[/bold]", border_style="blue"),
     )
@@ -243,6 +245,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         chat_id_raw = _pop_arg_value(rest, "--chat-id")
         channel_id_raw = _pop_arg_value(rest, "--channel-id")
         home_raw = _pop_arg_value(rest, "--home")
+        auth_timeout_raw = _pop_arg_value(rest, "--auth-timeout")
     except _ArgError as exc:
         _console.print(f"[bold red]{exc}[/bold red]")
         return None
@@ -260,6 +263,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         port = _parse_int(port_raw, "port")
         chat_id = _parse_int(chat_id_raw, "chat-id")
         channel_id = _parse_int(channel_id_raw, "channel-id")
+        auth_timeout = _parse_int(auth_timeout_raw, "auth-timeout")
     except _ArgError as exc:
         _console.print(f"[bold red]{exc}[/bold red]")
         return None
@@ -319,6 +323,11 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         resolved_chat_id = None
     if resolved_channel_id is not None and resolved_channel_id <= 0:
         resolved_channel_id = None
+    if auth_timeout is None:
+        auth_timeout = _DEFAULT_AUTH_TIMEOUT_SECONDS
+    if auth_timeout <= 0:
+        _console.print("[bold red]Auth timeout must be a positive number.[/bold red]")
+        return None
 
     return LocalChatSettings(
         host=host,
@@ -330,6 +339,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         dry_run=dry_run,
         probe=probe,
         reset_state=reset_state,
+        auth_timeout=auth_timeout,
     )
 
 
@@ -444,6 +454,7 @@ def _print_dry_run(settings: LocalChatSettings) -> None:
     status.add_row("Chat ID", str(settings.chat_id or "default"))
     status.add_row("Channel ID", str(settings.channel_id or "none"))
     status.add_row("Token", "present" if settings.token else "missing")
+    status.add_row("Auth Timeout", f"{settings.auth_timeout}s")
     status.add_row("DUCTOR_HOME", str(settings.ductor_home))
     status.add_row("State File", str(_state_path(paths)))
     _console.print(Panel(status, title="[bold]Local Chat Dry Run[/bold]", border_style="green"))
@@ -493,11 +504,11 @@ async def _probe(settings: LocalChatSettings) -> None:
             try:
                 auth_resp = await asyncio.wait_for(
                     ws.receive_json(),
-                    timeout=_AUTH_TIMEOUT_SECONDS,
+                    timeout=settings.auth_timeout,
                 )
             except asyncio.TimeoutError:
                 _console.print(
-                    f"[bold red]Auth response timeout ({_AUTH_TIMEOUT_SECONDS}s).[/bold red]",
+                    f"[bold red]Auth response timeout ({settings.auth_timeout}s).[/bold red]",
                 )
                 return
             except Exception as exc:
@@ -542,11 +553,11 @@ async def _run_chat(settings: LocalChatSettings) -> None:
             try:
                 auth_resp = await asyncio.wait_for(
                     ws.receive_json(),
-                    timeout=_AUTH_TIMEOUT_SECONDS,
+                    timeout=settings.auth_timeout,
                 )
             except asyncio.TimeoutError:
                 _console.print(
-                    f"[bold red]Auth response timeout ({_AUTH_TIMEOUT_SECONDS}s).[/bold red]",
+                    f"[bold red]Auth response timeout ({settings.auth_timeout}s).[/bold red]",
                 )
                 return
             except Exception as exc:

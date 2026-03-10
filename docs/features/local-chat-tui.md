@@ -58,7 +58,9 @@ Probe the API (connect + auth, then exit):
 On success, the probe also persists the resolved host/port/chat_id/channel_id
 to `local_chat.json` under the selected `DUCTOR_HOME`.
 If the server does not respond to auth within 10 seconds, the probe exits with
-an auth timeout message.
+an auth timeout message. Adjust the timeout if needed:
+
+`ductor local chat --probe --auth-timeout 20 --port 8841 --home ~/.ductor-local-chat-test`
 
 Clear persisted state (optional, exits immediately and does not require a token):
 
