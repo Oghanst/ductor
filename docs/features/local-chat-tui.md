@@ -46,3 +46,7 @@ Typical usage with an isolated home and backup port:
 `ductor local chat --port 8841 --home ~/.ductor-local-chat-test`
 
 Ensure the API token is available in the API config (or pass `--token`).
+
+Preflight settings without connecting:
+
+`ductor local chat --dry-run --port 8841 --home ~/.ductor-local-chat-test`

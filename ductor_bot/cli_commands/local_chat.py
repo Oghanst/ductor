@@ -45,6 +45,7 @@ class LocalChatSettings:
     chat_id: int | None
     channel_id: int | None
     ductor_home: Path
+    dry_run: bool
 
     @property
     def ws_url(self) -> str:
@@ -113,6 +114,7 @@ def print_local_help() -> None:
     table.add_row("--chat-id <id>", "Override chat_id")
     table.add_row("--channel-id <id>", "Override channel_id (topic)")
     table.add_row("--home <path>", "Use alternate DUCTOR_HOME")
+    table.add_row("--dry-run", "Print resolved settings and exit")
     _console.print(
         Panel(table, title="[bold]Local Chat Commands[/bold]", border_style="blue"),
     )
@@ -140,6 +142,13 @@ def _pop_arg_value(args: list[str], name: str) -> str | None:
     value = args[idx + 1]
     del args[idx : idx + 2]
     return value
+
+
+def _pop_flag(args: list[str], name: str) -> bool:
+    if name not in args:
+        return False
+    args.remove(name)
+    return True
 
 
 def _parse_int(value: str | None, name: str) -> int | None:
@@ -221,6 +230,8 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         _console.print(f"[bold red]{exc}[/bold red]")
         return None
 
+    dry_run = _pop_flag(rest, "--dry-run")
+
     if rest:
         _console.print(f"[bold red]Unknown arguments:[/bold red] {' '.join(rest)}")
         return None
@@ -254,9 +265,11 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         resolved_channel_id = state.channel_id
 
     if not token:
-        _console.print("[bold red]API token not found.[/bold red]")
-        _console.print("Run 'ductor api enable' and restart the bot, or pass --token.")
-        return None
+        if not dry_run:
+            _console.print("[bold red]API token not found.[/bold red]")
+            _console.print("Run 'ductor api enable' and restart the bot, or pass --token.")
+            return None
+        token = ""
 
     if api_cfg and not api_cfg.get("enabled", False):
         _console.print("[yellow]Warning:[/yellow] API is disabled in config.")
@@ -274,6 +287,7 @@ def _resolve_settings(rest: list[str]) -> LocalChatSettings | None:
         chat_id=resolved_chat_id,
         channel_id=resolved_channel_id,
         ductor_home=paths.ductor_home,
+        dry_run=dry_run,
     )
 
 
@@ -294,6 +308,10 @@ def local_chat(rest: list[str]) -> None:
 
     settings = _resolve_settings(rest)
     if settings is None:
+        return
+
+    if settings.dry_run:
+        _print_dry_run(settings)
         return
 
     asyncio.run(_run_chat(settings))
@@ -369,6 +387,20 @@ def _note_result_files(message: ChatMessage, files: list[object] | None) -> None
                 names.append(name)
     if names:
         message.text = f"{message.text}\n\nFiles: {', '.join(names)}"
+
+
+def _print_dry_run(settings: LocalChatSettings) -> None:
+    paths = resolve_paths(ductor_home=settings.ductor_home)
+    status = Table(show_header=False, box=None, padding=(0, 2))
+    status.add_column(style="bold cyan", min_width=18)
+    status.add_column()
+    status.add_row("Endpoint", settings.ws_url)
+    status.add_row("Chat ID", str(settings.chat_id or "default"))
+    status.add_row("Channel ID", str(settings.channel_id or "none"))
+    status.add_row("Token", "present" if settings.token else "missing")
+    status.add_row("DUCTOR_HOME", str(settings.ductor_home))
+    status.add_row("State File", str(_state_path(paths)))
+    _console.print(Panel(status, title="[bold]Local Chat Dry Run[/bold]", border_style="green"))
 
 
 async def _run_chat(settings: LocalChatSettings) -> None:
