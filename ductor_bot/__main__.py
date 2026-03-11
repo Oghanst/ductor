@@ -111,6 +111,21 @@ def _has_valid_telegram_config_data(data: dict[str, object]) -> bool:
     return bool(token) and not str(token).startswith("YOUR_") and bool(users)
 
 
+def _read_config_data(config_path: Path) -> dict[str, object] | None:
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _telegram_config_ready_on_disk(config_path: Path) -> bool:
+    data = _read_config_data(config_path)
+    if data is None:
+        return False
+    return _has_valid_telegram_config_data(data)
+
+
 def _has_api_enabled_data(data: dict[str, object]) -> bool:
     api = data.get("api")
     return isinstance(api, dict) and bool(api.get("enabled", False))
@@ -297,6 +312,7 @@ async def run_api_only(config: AgentConfig) -> int:
     paths = resolve_paths(ductor_home=config.ductor_home)
 
     from ductor_bot.infra.pidlock import acquire_lock, release_lock
+    from ductor_bot.infra.restart import EXIT_RESTART
     from ductor_bot.orchestrator.core import Orchestrator
 
     acquire_lock(pid_file=paths.ductor_home / "bot.pid", kill_existing=True)
@@ -321,7 +337,13 @@ async def run_api_only(config: AgentConfig) -> int:
         _auto_select_authenticated_provider(config, config_path=paths.config_path)
         logger.info("Starting API-only runtime (Telegram disabled)")
         orch = await Orchestrator.create(config, agent_name="main")
-        await asyncio.Future()
+        while True:
+            if _telegram_config_ready_on_disk(paths.config_path):
+                _console.print(
+                    "[green]Telegram config detected. Restarting into Telegram runtime...[/green]"
+                )
+                return EXIT_RESTART
+            await asyncio.sleep(1.0)
     except asyncio.CancelledError:
         logger.info("Termination signal received, shutting down API-only runtime...")
     except KeyboardInterrupt:

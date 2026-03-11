@@ -345,6 +345,31 @@ class TestIsConfiguredExtended:
         with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
             assert _is_configured() is True
 
+    def test_telegram_config_ready_on_disk_true(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _telegram_config_ready_on_disk
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "telegram_token": "12345678:ABCDEFGHIJKLMNOPQRSTUVWXYZ12345",
+                    "allowed_user_ids": [1],
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert _telegram_config_ready_on_disk(cfg) is True
+
+    def test_telegram_config_ready_on_disk_false(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _telegram_config_ready_on_disk
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text(
+            json.dumps({"telegram_token": "", "allowed_user_ids": []}),
+            encoding="utf-8",
+        )
+        assert _telegram_config_ready_on_disk(cfg) is False
+
 
 class TestStopBot:
     def test_stop_kills_running_process(self, tmp_path: Path) -> None:

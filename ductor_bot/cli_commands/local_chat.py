@@ -503,7 +503,10 @@ async def _handle_telegram_onboard(
     if not _update_telegram_config(paths, token=token, user_ids=user_ids):
         _append_system(messages, "Failed to persist Telegram config.")
         return
-    _append_system(messages, "Telegram config updated. Restart ductor to enable Telegram polling.")
+    _append_system(
+        messages,
+        "Telegram config updated. Runtime will auto-restart into Telegram mode shortly.",
+    )
 
 
 def _build_auth_payload(settings: LocalChatSettings, e2e_pk: str) -> dict[str, Any]:
