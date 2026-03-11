@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import signal
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 from rich.console import Console
 
@@ -57,6 +59,32 @@ logger = logging.getLogger(__name__)
 _console = Console()
 
 
+def _apply_global_home_override(args: list[str]) -> list[str]:
+    """Apply global ``--home`` override via ``DUCTOR_HOME`` and return cleaned args."""
+    cleaned: list[str] = []
+    idx = 0
+    while idx < len(args):
+        current = args[idx]
+        if current == "--home":
+            if idx + 1 >= len(args):
+                _console.print("[bold red]Missing value for --home[/bold red]")
+                sys.exit(2)
+            os.environ["DUCTOR_HOME"] = str(Path(args[idx + 1]).expanduser())
+            idx += 2
+            continue
+        if current.startswith("--home="):
+            _, value = current.split("=", 1)
+            if not value:
+                _console.print("[bold red]Missing value for --home[/bold red]")
+                sys.exit(2)
+            os.environ["DUCTOR_HOME"] = str(Path(value).expanduser())
+            idx += 1
+            continue
+        cleaned.append(current)
+        idx += 1
+    return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
@@ -71,9 +99,26 @@ def _is_configured() -> bool:
         data = json.loads(paths.config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return False
+    if _has_valid_telegram_config_data(data):
+        return True
+    return _has_api_enabled_data(data)
+
+
+def _has_valid_telegram_config_data(data: dict[str, object]) -> bool:
     token = data.get("telegram_token", "")
     users = data.get("allowed_user_ids", [])
     return bool(token) and not str(token).startswith("YOUR_") and bool(users)
+
+
+def _has_api_enabled_data(data: dict[str, object]) -> bool:
+    api = data.get("api")
+    return isinstance(api, dict) and bool(api.get("enabled", False))
+
+
+def _has_valid_telegram_config(config: AgentConfig) -> bool:
+    return bool(config.telegram_token) and not config.telegram_token.startswith("YOUR_") and bool(
+        config.allowed_user_ids
+    )
 
 
 def load_config() -> AgentConfig:
@@ -122,6 +167,10 @@ def load_config() -> AgentConfig:
     defaults.pop("api", None)  # Beta: only written by `ductor api enable`
     merged, changed = deep_merge_config(user_data, defaults)
     changed = changed or normalized_existing
+    resolved_home = str(paths.ductor_home)
+    if merged.get("ductor_home") != resolved_home:
+        merged["ductor_home"] = resolved_home
+        changed = True
 
     if changed:
         atomic_json_save(config_path, merged)
@@ -147,9 +196,13 @@ async def run_telegram(config: AgentConfig) -> int:
     """
     paths = resolve_paths(ductor_home=config.ductor_home)
 
-    missing_token = not config.telegram_token or config.telegram_token.startswith("YOUR_")
-    needs_users = not config.allowed_user_ids
-    if missing_token or needs_users:
+    if not _has_valid_telegram_config(config):
+        if config.api.enabled:
+            _console.print(
+                "[bold yellow]Telegram config is incomplete. "
+                "Starting API-only runtime because api.enabled=true.[/bold yellow]"
+            )
+            return await run_api_only(config)
         _console.print(
             "[bold yellow]Config is incomplete. Run [bold]ductor onboarding[/bold].[/bold yellow]"
         )
@@ -192,6 +245,48 @@ async def run_telegram(config: AgentConfig) -> int:
         await supervisor.stop_all()
         release_lock(pid_file=paths.ductor_home / "bot.pid")
     return exit_code
+
+
+async def run_api_only(config: AgentConfig) -> int:
+    """Run orchestrator + WebSocket API without Telegram initialization."""
+    paths = resolve_paths(ductor_home=config.ductor_home)
+
+    from ductor_bot.infra.pidlock import acquire_lock, release_lock
+    from ductor_bot.orchestrator.core import Orchestrator
+
+    acquire_lock(pid_file=paths.ductor_home / "bot.pid", kill_existing=True)
+    orch: Orchestrator | None = None
+    loop = asyncio.get_running_loop()
+    current_task = asyncio.current_task()
+    installed_signals: list[signal.Signals] = []
+
+    def _request_shutdown() -> None:
+        if current_task is not None and not current_task.done():
+            current_task.cancel()
+
+    if current_task is not None and sys.platform != "win32":
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(sig, _request_shutdown)
+            except (NotImplementedError, RuntimeError, ValueError):
+                continue
+            installed_signals.append(sig)
+
+    try:
+        logger.info("Starting API-only runtime (Telegram disabled)")
+        orch = await Orchestrator.create(config, agent_name="main")
+        await asyncio.Future()
+    except asyncio.CancelledError:
+        logger.info("Termination signal received, shutting down API-only runtime...")
+    except KeyboardInterrupt:
+        logger.info("Shutting down API-only runtime...")
+    finally:
+        for sig in installed_signals:
+            loop.remove_signal_handler(sig)
+        if orch is not None:
+            await orch.shutdown()
+        release_lock(pid_file=paths.ductor_home / "bot.pid")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +364,7 @@ _Action = Callable[[], None]
 
 def main() -> None:
     """CLI entry point."""
-    args = sys.argv[1:]
+    args = _apply_global_home_override(sys.argv[1:])
     commands = [a for a in args if not a.startswith("-")]
     verbose = "--verbose" in args or "-v" in args
 

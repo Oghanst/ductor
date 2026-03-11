@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -121,6 +122,27 @@ class TestLoadConfig:
         merged = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
         assert merged["gemini_api_key"] == "null"
 
+    def test_overrides_config_ductor_home_with_resolved_home(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import load_config
+
+        home = tmp_path / ".ductor-alt"
+        config_dir = home / "config"
+        config_dir.mkdir(parents=True)
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        user_cfg = {"telegram_token": "TOKEN", "allowed_user_ids": [1], "ductor_home": "/tmp/wrong"}
+        (config_dir / "config.json").write_text(json.dumps(user_cfg), encoding="utf-8")
+
+        with patch("ductor_bot.__main__.resolve_paths") as mock_paths:
+            paths = DuctorPaths(ductor_home=home, home_defaults=fw / "workspace", framework_root=fw)
+            mock_paths.return_value = paths
+            with patch("ductor_bot.__main__.init_workspace"):
+                config = load_config()
+
+        assert config.ductor_home == str(home)
+        merged = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+        assert merged["ductor_home"] == str(home)
+
 
 class TestIsConfigured:
     def test_unconfigured_when_no_config(self, tmp_path: Path) -> None:
@@ -203,6 +225,20 @@ class TestRunTelegram:
         mock_supervisor.start.assert_called_once()
         mock_supervisor.stop_all.assert_called_once()
 
+    async def test_runs_api_only_when_api_enabled_and_telegram_incomplete(
+        self, tmp_path: Path
+    ) -> None:
+        from ductor_bot.__main__ import run_telegram
+
+        config = AgentConfig(telegram_token="", allowed_user_ids=[], api={"enabled": True})
+        config.ductor_home = str(tmp_path)
+
+        with patch("ductor_bot.__main__.run_api_only", new=AsyncMock(return_value=0)) as mock_run:
+            exit_code = await run_telegram(config)
+
+        assert exit_code == 0
+        mock_run.assert_awaited_once_with(config)
+
 
 def _make_paths(tmp_path: Path) -> DuctorPaths:
     home = tmp_path / "home"
@@ -241,6 +277,17 @@ class TestIsConfiguredExtended:
         paths.config_path.write_text("{invalid json", encoding="utf-8")
         with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
             assert _is_configured() is False
+
+    def test_configured_with_api_enabled_without_telegram(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _is_configured
+
+        paths = _make_paths(tmp_path)
+        _write_config(
+            paths,
+            {"telegram_token": "", "allowed_user_ids": [], "api": {"enabled": True}},
+        )
+        with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
+            assert _is_configured() is True
 
 
 class TestStopBot:
@@ -662,6 +709,32 @@ class TestMainDispatch:
         ):
             main()
         mock_setup.assert_called_once()
+
+    def test_global_home_flag_sets_env(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import main
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("sys.argv", ["ductor", "--home", str(tmp_path)]),
+            patch("ductor_bot.__main__._is_configured", return_value=True),
+            patch("ductor_bot.__main__._start_bot"),
+        ):
+            main()
+
+        assert os.environ["DUCTOR_HOME"] == str(tmp_path)
+
+    def test_global_home_flag_removed_before_local_dispatch(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import main
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("sys.argv", ["ductor", "--home", str(tmp_path), "local", "chat", "--probe"]),
+            patch("ductor_bot.__main__._cmd_local") as mock_local,
+        ):
+            main()
+
+        mock_local.assert_called_once_with(["local", "chat", "--probe"])
+        assert os.environ["DUCTOR_HOME"] == str(tmp_path)
 
 
 class TestSetupCommand:

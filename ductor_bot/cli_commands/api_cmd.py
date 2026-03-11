@@ -102,6 +102,14 @@ def api_enable() -> None:
         )
         return
 
+    # Bootstrap config/workspace when running in a fresh DUCTOR_HOME.
+    from ductor_bot.workspace.paths import resolve_paths as _resolve_paths
+
+    if not _resolve_paths().config_path.exists():
+        from ductor_bot.__main__ import load_config
+
+        load_config()
+
     result = docker_read_config()
     if result is None:
         return
