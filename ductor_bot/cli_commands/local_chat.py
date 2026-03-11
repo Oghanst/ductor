@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ _LOCAL_SUBCOMMANDS = frozenset({"chat"})
 _STATE_FILENAME = "local_chat.json"
 _MAX_MESSAGES = 50
 _DEFAULT_AUTH_TIMEOUT_SECONDS = 10
+_TELEGRAM_TOKEN_PATTERN = re.compile(r"^\d{8,}:[A-Za-z0-9_-]{30,}$")
 
 
 @dataclass(slots=True)
@@ -415,7 +417,7 @@ def _render_screen(
     if runtime.last_error:
         status.append(f"Error: {runtime.last_error}\n")
 
-    commands = Text("/help  /abort  /exit")
+    commands = Text("/help  /abort  /telegram [token user_id[,user_id]]  /exit")
 
     _console.print(Panel(chat_body, title="Local Chat", border_style="blue"))
     _console.print(Panel(status, title="Status", border_style="green"))
@@ -424,6 +426,84 @@ def _render_screen(
 
 def _append_system(messages: list[ChatMessage], text: str) -> None:
     messages.append(ChatMessage(role="system", text=text))
+
+
+def _parse_user_ids(raw: str) -> list[int] | None:
+    values: list[int] = []
+    for chunk in raw.split(","):
+        token = chunk.strip()
+        if not token:
+            continue
+        try:
+            uid = int(token)
+        except ValueError:
+            return None
+        if uid <= 0:
+            return None
+        values.append(uid)
+    return values or None
+
+
+def _load_full_config(paths: DuctorPaths) -> dict[str, Any]:
+    if not paths.config_path.exists():
+        return {}
+    try:
+        data = json.loads(paths.config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _update_telegram_config(paths: DuctorPaths, *, token: str, user_ids: list[int]) -> bool:
+    data = _load_full_config(paths)
+    data["telegram_token"] = token
+    data["allowed_user_ids"] = user_ids
+
+    channels = data.get("channels")
+    if isinstance(channels, dict):
+        enabled = channels.get("enabled")
+        if not isinstance(enabled, list):
+            channels["enabled"] = ["telegram"]
+        elif "telegram" not in [str(item).strip().lower() for item in enabled]:
+            enabled.append("telegram")
+    else:
+        data["channels"] = {"enabled": ["telegram"]}
+
+    try:
+        atomic_json_save(paths.config_path, data)
+    except OSError:
+        return False
+    return True
+
+
+async def _handle_telegram_onboard(
+    raw_text: str,
+    settings: LocalChatSettings,
+    messages: list[ChatMessage],
+) -> None:
+    parts = raw_text.split(maxsplit=2)
+    if len(parts) >= 3:
+        token = parts[1].strip()
+        user_ids_raw = parts[2].strip()
+    else:
+        token = (await asyncio.to_thread(_console.input, "Telegram token> ")).strip()
+        user_ids_raw = (
+            await asyncio.to_thread(_console.input, "Telegram user IDs (comma-separated)> ")
+        ).strip()
+
+    if not _TELEGRAM_TOKEN_PATTERN.match(token):
+        _append_system(messages, "Invalid Telegram token format.")
+        return
+    user_ids = _parse_user_ids(user_ids_raw)
+    if not user_ids:
+        _append_system(messages, "Invalid Telegram user IDs. Example: 123456789,987654321")
+        return
+
+    paths = resolve_paths(ductor_home=settings.ductor_home)
+    if not _update_telegram_config(paths, token=token, user_ids=user_ids):
+        _append_system(messages, "Failed to persist Telegram config.")
+        return
+    _append_system(messages, "Telegram config updated. Restart ductor to enable Telegram polling.")
 
 
 def _build_auth_payload(settings: LocalChatSettings, e2e_pk: str) -> dict[str, Any]:
@@ -608,12 +688,18 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                     await ws.close(code=1000, message=b"client_exit")
                     break
                 if text == "/help":
-                    _append_system(messages, "Commands: /help, /abort, /exit")
+                    _append_system(
+                        messages,
+                        "Commands: /help, /abort, /telegram [token user_id[,user_id]], /exit",
+                    )
                     continue
 
                 if text == "/abort":
                     await ws.send_str(e2e.encrypt({"type": "abort"}))
                     await _handle_abort(ws, e2e, messages, runtime)
+                    continue
+                if text.startswith("/telegram"):
+                    await _handle_telegram_onboard(text, settings, messages)
                     continue
 
                 user_msg = ChatMessage(role="user", text=text)

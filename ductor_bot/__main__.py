@@ -158,6 +158,18 @@ def _auto_select_authenticated_provider(config: AgentConfig, *, config_path: Pat
     )
 
 
+def _ensure_api_enabled_for_local_runtime(config: AgentConfig, *, config_path: Path) -> None:
+    """Ensure API is enabled so local chat can bootstrap without Telegram onboarding."""
+    if config.api.enabled:
+        return
+    config.api.enabled = True
+    if config_path.exists():
+        update_config_file(config_path, api=config.api.model_dump(mode="json"))
+    _console.print(
+        "[yellow]API was disabled; enabled automatically for local runtime bootstrap.[/yellow]"
+    )
+
+
 def load_config() -> AgentConfig:
     """Load, auto-create, and smart-merge the bot config.
 
@@ -234,16 +246,12 @@ async def run_telegram(config: AgentConfig) -> int:
     paths = resolve_paths(ductor_home=config.ductor_home)
 
     if not _has_valid_telegram_config(config):
-        if config.api.enabled:
-            _console.print(
-                "[bold yellow]Telegram config is incomplete. "
-                "Starting API-only runtime because api.enabled=true.[/bold yellow]"
-            )
-            return await run_api_only(config)
+        _ensure_api_enabled_for_local_runtime(config, config_path=paths.config_path)
         _console.print(
-            "[bold yellow]Config is incomplete. Run [bold]ductor onboarding[/bold].[/bold yellow]"
+            "[bold yellow]Telegram config is incomplete. "
+            "Starting API-only runtime; configure Telegram later from local chat.[/bold yellow]"
         )
-        sys.exit(1)
+        return await run_api_only(config)
 
     from ductor_bot.bot.sender import send_rich
     from ductor_bot.infra.pidlock import acquire_lock, release_lock
@@ -343,7 +351,7 @@ def _cmd_status() -> None:
         _console.print(
             Panel(
                 "[bold yellow]Not configured.[/bold yellow]\n\n"
-                "Run [bold]ductor[/bold] to start the setup wizard.",
+                "Run [bold]ductor[/bold] to start local runtime and configure channels dynamically.",
                 title="[bold]Status[/bold]",
                 border_style="yellow",
                 padding=(1, 2),
@@ -353,27 +361,16 @@ def _cmd_status() -> None:
 
 
 def _cmd_setup(verbose: bool) -> None:
-    """Run onboarding (with smart reset if already configured), then start."""
-    from ductor_bot.cli.init_wizard import run_onboarding, run_smart_reset
-
-    _stop_bot()
-    paths = resolve_paths()
-    if _is_configured():
-        run_smart_reset(paths.ductor_home)
-    service_installed = run_onboarding()
-    if service_installed:
-        return
+    """Legacy setup command: onboarding removed, start runtime directly."""
+    _console.print(
+        "[yellow]Interactive onboarding is deprecated. "
+        "Use local chat (/telegram ...) for dynamic Telegram setup.[/yellow]"
+    )
     _start_bot(verbose)
 
 
 def _default_action(verbose: bool) -> None:
-    """Auto-onboarding if unconfigured, then start bot."""
-    if not _is_configured():
-        from ductor_bot.cli.init_wizard import run_onboarding
-
-        service_installed = run_onboarding()
-        if service_installed:
-            return
+    """Start runtime directly; Telegram onboarding is now dynamic and optional."""
     _start_bot(verbose)
 
 

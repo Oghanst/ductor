@@ -177,28 +177,34 @@ class TestIsConfigured:
 
 
 class TestRunTelegram:
-    async def test_exits_on_missing_token(self, tmp_path: Path) -> None:
+    async def test_missing_token_falls_back_to_api_only(self, tmp_path: Path) -> None:
         from ductor_bot.__main__ import run_telegram
 
         config = AgentConfig(telegram_token="", ductor_home=str(tmp_path))
-        with pytest.raises(SystemExit):
-            await run_telegram(config)
+        with patch("ductor_bot.__main__.run_api_only", new=AsyncMock(return_value=0)) as mock_run:
+            exit_code = await run_telegram(config)
+        assert exit_code == 0
+        mock_run.assert_awaited_once_with(config)
 
-    async def test_exits_on_placeholder_token(self, tmp_path: Path) -> None:
+    async def test_placeholder_token_falls_back_to_api_only(self, tmp_path: Path) -> None:
         from ductor_bot.__main__ import run_telegram
 
         config = AgentConfig(telegram_token="YOUR_TOKEN_HERE", ductor_home=str(tmp_path))
-        with pytest.raises(SystemExit):
-            await run_telegram(config)
+        with patch("ductor_bot.__main__.run_api_only", new=AsyncMock(return_value=0)) as mock_run:
+            exit_code = await run_telegram(config)
+        assert exit_code == 0
+        mock_run.assert_awaited_once_with(config)
 
-    async def test_exits_on_empty_allowed_users(self, tmp_path: Path) -> None:
+    async def test_empty_allowed_users_falls_back_to_api_only(self, tmp_path: Path) -> None:
         from ductor_bot.__main__ import run_telegram
 
         config = AgentConfig(
             telegram_token="valid:token", allowed_user_ids=[], ductor_home=str(tmp_path)
         )
-        with pytest.raises(SystemExit):
-            await run_telegram(config)
+        with patch("ductor_bot.__main__.run_api_only", new=AsyncMock(return_value=0)) as mock_run:
+            exit_code = await run_telegram(config)
+        assert exit_code == 0
+        mock_run.assert_awaited_once_with(config)
 
     async def test_runs_bot_with_valid_config(self, tmp_path: Path) -> None:
         from ductor_bot.__main__ import run_telegram
@@ -684,30 +690,16 @@ class TestMainDispatch:
             main()
         mock_start.assert_called_once_with(False)
 
-    def test_default_runs_onboarding_when_unconfigured(self) -> None:
+    def test_default_starts_bot_when_unconfigured(self) -> None:
         from ductor_bot.__main__ import main
 
         with (
             patch("sys.argv", ["ductor"]),
             patch("ductor_bot.__main__._is_configured", return_value=False),
-            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=False) as mock_onboard,
             patch("ductor_bot.__main__._start_bot") as mock_start,
         ):
             main()
-        mock_onboard.assert_called_once()
         mock_start.assert_called_once_with(False)
-
-    def test_default_does_not_start_bot_when_service_installed(self) -> None:
-        from ductor_bot.__main__ import main
-
-        with (
-            patch("sys.argv", ["ductor"]),
-            patch("ductor_bot.__main__._is_configured", return_value=False),
-            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=True),
-            patch("ductor_bot.__main__._start_bot") as mock_start,
-        ):
-            main()
-        mock_start.assert_not_called()
 
     def test_verbose_flag_passed(self) -> None:
         from ductor_bot.__main__ import main
@@ -788,31 +780,24 @@ class TestMainDispatch:
 
 
 class TestSetupCommand:
-    def test_setup_starts_bot_when_service_not_installed(self) -> None:
+    def test_setup_starts_bot(self) -> None:
         from ductor_bot.__main__ import _cmd_setup
 
         with (
-            patch("ductor_bot.__main__._stop_bot"),
-            patch("ductor_bot.__main__.resolve_paths"),
-            patch("ductor_bot.__main__._is_configured", return_value=False),
-            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=False),
             patch("ductor_bot.__main__._start_bot") as mock_start,
         ):
             _cmd_setup(False)
         mock_start.assert_called_once_with(False)
 
-    def test_setup_skips_start_when_service_installed(self) -> None:
+    def test_setup_prints_deprecation_notice(self) -> None:
         from ductor_bot.__main__ import _cmd_setup
 
         with (
-            patch("ductor_bot.__main__._stop_bot"),
-            patch("ductor_bot.__main__.resolve_paths"),
-            patch("ductor_bot.__main__._is_configured", return_value=False),
-            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=True),
-            patch("ductor_bot.__main__._start_bot") as mock_start,
+            patch("ductor_bot.__main__._console.print") as mock_print,
+            patch("ductor_bot.__main__._start_bot"),
         ):
             _cmd_setup(False)
-        mock_start.assert_not_called()
+        mock_print.assert_called()
 
 
 class TestMainHelpers:
@@ -890,13 +875,12 @@ class TestMainHelpers:
             _default_action(verbose=True)
         mock_start.assert_called_once_with(True)
 
-    def test_default_action_onboarding_service_installed_skips_start(self) -> None:
+    def test_default_action_unconfigured_starts(self) -> None:
         from ductor_bot.__main__ import _default_action
 
         with (
             patch("ductor_bot.__main__._is_configured", return_value=False),
-            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=True),
             patch("ductor_bot.__main__._start_bot") as mock_start,
         ):
             _default_action(verbose=False)
-        mock_start.assert_not_called()
+        mock_start.assert_called_once_with(False)
