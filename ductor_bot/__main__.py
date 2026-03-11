@@ -49,6 +49,7 @@ from ductor_bot.config import (
     DEFAULT_EMPTY_GEMINI_API_KEY,
     AgentConfig,
     deep_merge_config,
+    update_config_file,
 )
 from ductor_bot.infra.json_store import atomic_json_save
 from ductor_bot.workspace.init import init_workspace
@@ -118,6 +119,42 @@ def _has_api_enabled_data(data: dict[str, object]) -> bool:
 def _has_valid_telegram_config(config: AgentConfig) -> bool:
     return bool(config.telegram_token) and not config.telegram_token.startswith("YOUR_") and bool(
         config.allowed_user_ids
+    )
+
+
+def _fallback_model_for_provider(provider: str) -> str:
+    if provider == "codex":
+        return "gpt-5.2-codex"
+    if provider == "gemini":
+        return "auto"
+    return "sonnet"
+
+
+def _auto_select_authenticated_provider(config: AgentConfig, *, config_path: Path) -> None:
+    """When current provider is unavailable, switch to an authenticated one."""
+    from ductor_bot.cli.auth import check_all_auth
+
+    auth = check_all_auth()
+    authenticated = {name for name, result in auth.items() if result.is_authenticated}
+    if not authenticated:
+        return
+    if config.provider in authenticated:
+        return
+
+    for candidate in ("codex", "claude", "gemini"):
+        if candidate in authenticated:
+            selected = candidate
+            break
+    else:
+        return
+
+    selected_model = _fallback_model_for_provider(selected)
+    config.provider = selected
+    config.model = selected_model
+    update_config_file(config_path, provider=selected, model=selected_model)
+    _console.print(
+        "[yellow]Provider auto-selected for API-only mode:[/yellow] "
+        f"{selected} ({selected_model})"
     )
 
 
@@ -273,6 +310,7 @@ async def run_api_only(config: AgentConfig) -> int:
             installed_signals.append(sig)
 
     try:
+        _auto_select_authenticated_provider(config, config_path=paths.config_path)
         logger.info("Starting API-only runtime (Telegram disabled)")
         orch = await Orchestrator.create(config, agent_name="main")
         await asyncio.Future()

@@ -370,7 +370,10 @@ def local_chat(rest: list[str]) -> None:
         asyncio.run(_probe(settings))
         return
 
-    asyncio.run(_run_chat(settings))
+    try:
+        asyncio.run(_run_chat(settings))
+    except KeyboardInterrupt:
+        _console.print("\n[dim]Local chat interrupted.[/dim]")
 
 
 def _render_screen(
@@ -594,6 +597,7 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                     user_input = await asyncio.to_thread(_console.input, "You> ")
                 except (EOFError, KeyboardInterrupt):
                     _append_system(messages, "Session closed.")
+                    await ws.close(code=1000, message=b"client_exit")
                     break
 
                 text = user_input.strip()
@@ -601,6 +605,7 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                     continue
                 if text in {"/exit", "/quit"}:
                     _append_system(messages, "Session closed.")
+                    await ws.close(code=1000, message=b"client_exit")
                     break
                 if text == "/help":
                     _append_system(messages, "Commands: /help, /abort, /exit")

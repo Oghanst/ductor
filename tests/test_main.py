@@ -240,6 +240,56 @@ class TestRunTelegram:
         mock_run.assert_awaited_once_with(config)
 
 
+class TestApiOnlyProviderSelection:
+    def test_auto_selects_authenticated_provider(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _auto_select_authenticated_provider
+
+        cfg = AgentConfig(provider="claude", model="opus")
+        config_path = tmp_path / "config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("{}", encoding="utf-8")
+
+        auth_results = {
+            "claude": MagicMock(is_authenticated=False),
+            "codex": MagicMock(is_authenticated=True),
+            "gemini": MagicMock(is_authenticated=False),
+        }
+        with (
+            patch("ductor_bot.cli.auth.check_all_auth", return_value=auth_results),
+            patch("ductor_bot.__main__.update_config_file") as mock_update,
+        ):
+            _auto_select_authenticated_provider(cfg, config_path=config_path)
+
+        assert cfg.provider == "codex"
+        assert cfg.model == "gpt-5.2-codex"
+        mock_update.assert_called_once_with(
+            config_path, provider="codex", model="gpt-5.2-codex"
+        )
+
+    def test_no_change_when_provider_already_authenticated(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _auto_select_authenticated_provider
+
+        cfg = AgentConfig(provider="codex", model="gpt-5.2-codex")
+        config_path = tmp_path / "config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("{}", encoding="utf-8")
+
+        auth_results = {
+            "claude": MagicMock(is_authenticated=False),
+            "codex": MagicMock(is_authenticated=True),
+            "gemini": MagicMock(is_authenticated=False),
+        }
+        with (
+            patch("ductor_bot.cli.auth.check_all_auth", return_value=auth_results),
+            patch("ductor_bot.__main__.update_config_file") as mock_update,
+        ):
+            _auto_select_authenticated_provider(cfg, config_path=config_path)
+
+        assert cfg.provider == "codex"
+        assert cfg.model == "gpt-5.2-codex"
+        mock_update.assert_not_called()
+
+
 def _make_paths(tmp_path: Path) -> DuctorPaths:
     home = tmp_path / "home"
     fw = tmp_path / "fw"
