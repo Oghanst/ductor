@@ -35,14 +35,11 @@ async def _handle_restart_sentinel(bot: TelegramBot) -> dict[str, object] | None
     return sentinel
 
 
-async def run_startup(bot: TelegramBot) -> None:
-    """Execute full startup sequence: orchestrator, sentinels, recovery, update observer."""
-    from ductor_bot.orchestrator.core import Orchestrator
-
-    bot._orchestrator = await Orchestrator.create(
-        bot.config,
-        agent_name=bot._agent_name,
-    )
+async def _bootstrap_after_orchestrator(bot: TelegramBot) -> None:
+    """Execute startup sequence once ``bot._orchestrator`` is available."""
+    if bot._orchestrator is None:
+        msg = "Orchestrator must be initialized before startup bootstrap"
+        raise RuntimeError(msg)
 
     from ductor_bot.bot.chat_tracker import ChatTracker
 
@@ -133,3 +130,19 @@ async def run_startup(bot: TelegramBot) -> None:
     # Audit groups on startup and start periodic 24h check
     await bot.audit_groups()
     bot._group_audit_task = asyncio.create_task(bot._run_group_audit_loop())
+
+
+async def run_startup(bot: TelegramBot) -> None:
+    """Execute full startup sequence: create orchestrator + bootstrap bot runtime."""
+    from ductor_bot.orchestrator.core import Orchestrator
+
+    bot._orchestrator = await Orchestrator.create(
+        bot.config,
+        agent_name=bot._agent_name,
+    )
+    await _bootstrap_after_orchestrator(bot)
+
+
+async def run_startup_with_existing_orchestrator(bot: TelegramBot) -> None:
+    """Bootstrap Telegram runtime using an already-running orchestrator."""
+    await _bootstrap_after_orchestrator(bot)

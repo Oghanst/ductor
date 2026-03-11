@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from aiohttp import ClientSession, WSMsgType
+from aiohttp import ClientConnectionError, ClientSession, WSMsgType
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -505,7 +505,7 @@ async def _handle_telegram_onboard(
         return
     _append_system(
         messages,
-        "Telegram config updated. Runtime will auto-restart into Telegram mode shortly.",
+        "Telegram config updated. TUI remains active; Telegram channel will attach automatically.",
     )
 
 
@@ -698,7 +698,15 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                     continue
 
                 if text == "/abort":
-                    await ws.send_str(e2e.encrypt({"type": "abort"}))
+                    try:
+                        await ws.send_str(e2e.encrypt({"type": "abort"}))
+                    except ClientConnectionError:
+                        runtime.last_error = "Connection closed by server"
+                        _append_system(
+                            messages,
+                            "Connection closed by server (likely runtime switching). Reconnect to continue.",
+                        )
+                        break
                     await _handle_abort(ws, e2e, messages, runtime)
                     continue
                 if text.startswith("/telegram"):
@@ -710,7 +718,15 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                 assistant_msg = ChatMessage(role="assistant", text="")
                 messages.append(assistant_msg)
 
-                await ws.send_str(e2e.encrypt({"type": "message", "text": text}))
+                try:
+                    await ws.send_str(e2e.encrypt({"type": "message", "text": text}))
+                except ClientConnectionError:
+                    runtime.last_error = "Connection closed by server"
+                    _append_system(
+                        messages,
+                        "Connection closed by server (likely runtime switching). Reconnect to continue.",
+                    )
+                    break
                 await _handle_stream(ws, e2e, messages, assistant_msg, runtime)
 
 

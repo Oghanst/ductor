@@ -230,9 +230,16 @@ class TelegramBot:
             await send_rich(self._bot, uid, text, opts)
 
     async def _on_startup(self) -> None:
-        from ductor_bot.bot.startup import run_startup
+        from ductor_bot.bot.startup import run_startup, run_startup_with_existing_orchestrator
 
-        await run_startup(self)
+        if self._orchestrator is None:
+            await run_startup(self)
+            return
+        await run_startup_with_existing_orchestrator(self)
+
+    def attach_orchestrator(self, orch: Orchestrator) -> None:
+        """Attach an existing orchestrator so Telegram can be enabled without restart."""
+        self._orchestrator = orch
 
     def _register_handlers(self) -> None:
         r = self._router

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -119,11 +120,15 @@ def _read_config_data(config_path: Path) -> dict[str, object] | None:
     return data if isinstance(data, dict) else None
 
 
-def _telegram_config_ready_on_disk(config_path: Path) -> bool:
+def _load_telegram_ready_config(config_path: Path) -> AgentConfig | None:
     data = _read_config_data(config_path)
-    if data is None:
-        return False
-    return _has_valid_telegram_config_data(data)
+    if data is None or not _has_valid_telegram_config_data(data):
+        return None
+    try:
+        return AgentConfig.model_validate(data)
+    except Exception:
+        logger.exception("Failed to validate config while enabling Telegram channel")
+        return None
 
 
 def _has_api_enabled_data(data: dict[str, object]) -> bool:
@@ -312,11 +317,14 @@ async def run_api_only(config: AgentConfig) -> int:
     paths = resolve_paths(ductor_home=config.ductor_home)
 
     from ductor_bot.infra.pidlock import acquire_lock, release_lock
-    from ductor_bot.infra.restart import EXIT_RESTART
+    from ductor_bot.bot.app import TelegramBot
     from ductor_bot.orchestrator.core import Orchestrator
 
     acquire_lock(pid_file=paths.ductor_home / "bot.pid", kill_existing=True)
     orch: Orchestrator | None = None
+    telegram_bot: TelegramBot | None = None
+    telegram_task: asyncio.Task[int] | None = None
+    next_telegram_retry_at = 0.0
     loop = asyncio.get_running_loop()
     current_task = asyncio.current_task()
     installed_signals: list[signal.Signals] = []
@@ -338,11 +346,31 @@ async def run_api_only(config: AgentConfig) -> int:
         logger.info("Starting API-only runtime (Telegram disabled)")
         orch = await Orchestrator.create(config, agent_name="main")
         while True:
-            if _telegram_config_ready_on_disk(paths.config_path):
-                _console.print(
-                    "[green]Telegram config detected. Restarting into Telegram runtime...[/green]"
-                )
-                return EXIT_RESTART
+            if telegram_task is None and loop.time() >= next_telegram_retry_at:
+                tg_config = _load_telegram_ready_config(paths.config_path)
+                if tg_config is not None:
+                    telegram_bot = TelegramBot(tg_config, agent_name="main")
+                    telegram_bot.attach_orchestrator(orch)
+                    telegram_task = asyncio.create_task(telegram_bot.run(), name="telegram-frontend")
+                    _console.print(
+                        "[green]Telegram config detected. Telegram channel enabled "
+                        "(TUI remains active).[/green]"
+                    )
+
+            if telegram_task is not None and telegram_task.done():
+                try:
+                    exit_code = telegram_task.result()
+                except Exception:
+                    logger.exception("Telegram frontend crashed; will retry")
+                else:
+                    logger.warning("Telegram frontend exited (code=%s); will retry", exit_code)
+                with contextlib.suppress(Exception):
+                    if telegram_bot is not None:
+                        await telegram_bot.shutdown()
+                telegram_bot = None
+                telegram_task = None
+                next_telegram_retry_at = loop.time() + 10.0
+
             await asyncio.sleep(1.0)
     except asyncio.CancelledError:
         logger.info("Termination signal received, shutting down API-only runtime...")
@@ -351,6 +379,13 @@ async def run_api_only(config: AgentConfig) -> int:
     finally:
         for sig in installed_signals:
             loop.remove_signal_handler(sig)
+        if telegram_task is not None and not telegram_task.done():
+            telegram_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(telegram_task, timeout=3.0)
+        if telegram_bot is not None:
+            with contextlib.suppress(Exception):
+                await telegram_bot.shutdown()
         if orch is not None:
             await orch.shutdown()
         release_lock(pid_file=paths.ductor_home / "bot.pid")
