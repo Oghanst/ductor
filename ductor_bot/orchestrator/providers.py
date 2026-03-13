@@ -71,6 +71,8 @@ class ProviderManager:
         _model, provider = self.resolve_runtime_target(self._config.model)
         if provider == "claude":
             return "Claude Code"
+        if provider == "cfuse":
+            return "CodeFuse"
         if provider == "gemini":
             return "Gemini"
         return "Codex"
@@ -125,8 +127,9 @@ class ProviderManager:
 
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
         """Resolve requested model to the effective ``(model, provider)`` pair."""
-        model_name = requested_model or self._config.model
-        return model_name, self._models.provider_for(model_name)
+        if requested_model is None:
+            return self._config.model, self._config.provider
+        return requested_model, self._models.provider_for(requested_model)
 
     def is_known_model(self, candidate: str) -> bool:
         """Return True if *candidate* is a recognized model ID for any provider."""
@@ -146,6 +149,8 @@ class ProviderManager:
                     if m.is_default:
                         return m.id
             return ""
+        if provider == "cfuse":
+            return self._config.model if self._config.provider == "cfuse" else ""
         if provider == "gemini":
             return ""
         return ""
@@ -158,7 +163,7 @@ class ProviderManager:
         - known model   (``@opus``)  -> (inferred_provider, model)
         - unknown                    -> None
         """
-        if key in ("claude", "codex", "gemini"):
+        if key in ("claude", "codex", "cfuse", "gemini"):
             return key, self.default_model_for_provider(key)
         if self.is_known_model(key):
             provider = self._models.provider_for(key)
@@ -179,6 +184,7 @@ class ProviderManager:
             "claude": ("Claude Code", "#F97316"),
             "gemini": ("Gemini", "#8B5CF6"),
             "codex": ("Codex", "#10B981"),
+            "cfuse": ("CodeFuse", "#0EA5E9"),
         }
         providers: list[dict[str, object]] = []
         for pid in sorted(self._available_providers):
@@ -192,6 +198,8 @@ class ProviderManager:
             elif pid == "codex":
                 cache = codex_cache_obs.get_cache() if codex_cache_obs else None
                 models = [m.id for m in cache.models] if cache and cache.models else []
+            elif pid == "cfuse":
+                models = [self._config.model] if self._config.provider == "cfuse" else []
             else:
                 models = []
             providers.append({"id": pid, "name": name, "color": color, "models": models})

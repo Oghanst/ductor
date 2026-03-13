@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.claude_provider import ClaudeCodeCLI
+from ductor_bot.cli.cfuse_provider import CfuseCLI
 from ductor_bot.cli.codex_provider import CodexCLI
 from ductor_bot.cli.factory import create_cli
 from ductor_bot.cli.gemini_provider import GeminiCLI
@@ -28,6 +29,12 @@ def test_create_cli_returns_gemini() -> None:
     ):
         cli = create_cli(CLIConfig(provider="gemini"))
     assert isinstance(cli, GeminiCLI)
+
+
+def test_create_cli_returns_cfuse() -> None:
+    with patch("ductor_bot.cli.cfuse_provider.which", return_value="/usr/bin/cfuse"):
+        cli = create_cli(CLIConfig(provider="cfuse"))
+    assert isinstance(cli, CfuseCLI)
 
 
 def test_create_cli_unknown_provider_returns_claude() -> None:

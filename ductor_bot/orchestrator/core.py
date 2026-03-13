@@ -141,6 +141,7 @@ class Orchestrator:
                 docker_container=docker_container,
                 claude_cli_parameters=tuple(config.cli_parameters.claude),
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
+                cfuse_cli_parameters=tuple(config.cli_parameters.cfuse),
                 gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                 agent_name=agent_name,
                 interagent_port=interagent_port,
@@ -658,6 +659,7 @@ class Orchestrator:
                     docker_container=self._cli_service._config.docker_container,
                     claude_cli_parameters=tuple(config.cli_parameters.claude),
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
+                    cfuse_cli_parameters=tuple(config.cli_parameters.cfuse),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                 )
             )

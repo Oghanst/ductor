@@ -129,3 +129,26 @@ def test_update_available_providers() -> None:
     svc = _make_service()
     svc.update_available_providers(frozenset({"claude", "codex"}))
     assert svc._available_providers == frozenset({"claude", "codex"})
+
+
+def test_resolve_provider_uses_configured_provider_for_default_model() -> None:
+    svc = _make_service(
+        provider="cfuse",
+        default_model="antchat/Qwen3-Coder-480B-A35B-Instruct",
+    )
+    provider, model = svc.resolve_provider(AgentRequest(prompt="hello"))
+    assert provider == "cfuse"
+    assert model == "antchat/Qwen3-Coder-480B-A35B-Instruct"
+
+
+def test_cli_parameters_for_cfuse() -> None:
+    config = CLIServiceConfig(
+        working_dir="/tmp",
+        default_model="antchat/Qwen3-Coder-480B-A35B-Instruct",
+        provider="cfuse",
+        max_turns=None,
+        max_budget_usd=None,
+        permission_mode="bypassPermissions",
+        cfuse_cli_parameters=("--skip-hooks",),
+    )
+    assert config.cli_parameters_for_provider("cfuse") == ["--skip-hooks"]

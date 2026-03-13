@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
@@ -95,6 +97,46 @@ _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in _COM
 _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
 
 
+class _TrustEnvAiohttpSession(AiohttpSession):
+    """Aiogram session that respects HTTP(S)_PROXY / ALL_PROXY environment variables."""
+
+    async def create_session(self):  # type: ignore[override]
+        if self._should_reset_connector:
+            await self.close()
+
+        if self._session is None or self._session.closed:
+            from aiohttp import ClientSession
+            from aiohttp.hdrs import USER_AGENT
+            from aiohttp.http import SERVER_SOFTWARE
+            from aiogram.__meta__ import __version__
+
+            self._session = ClientSession(
+                connector=self._connector_type(**self._connector_init),
+                headers={
+                    USER_AGENT: f"{SERVER_SOFTWARE} aiogram/{__version__}",
+                },
+                trust_env=True,
+            )
+            self._should_reset_connector = False
+
+        return self._session
+
+
+def _telegram_proxy_env_enabled() -> bool:
+    """Return True when standard proxy environment variables are present."""
+    return any(
+        bool(os.environ.get(name))
+        for name in (
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        )
+    )
+
+
 def _help_line(command: str) -> str:
     """Return one command line for the help panel."""
     description = _CMD_DESC.get(command, "")
@@ -132,9 +174,13 @@ class TelegramBot:
         self._agent_name = agent_name
         self._orchestrator: Orchestrator | None = None
         self._abort_all_callback: Callable[[], Awaitable[int]] | None = None
+        bot_session = _TrustEnvAiohttpSession() if _telegram_proxy_env_enabled() else None
+        if bot_session is not None:
+            logger.info("Telegram Bot will use aiohttp trust_env proxy settings")
 
         self._bot = Bot(
             token=config.telegram_token,
+            session=bot_session,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
         self._bot_id: int | None = None
@@ -837,7 +883,7 @@ class TelegramBot:
                 provider_override, model_override = resolved[0], resolved[1] or None
                 prompt = rest
                 # If key was a provider name, check for optional model after it
-                if key in ("claude", "codex", "gemini"):
+                if key in ("claude", "codex", "cfuse", "gemini"):
                     model_match = re.match(r"([a-zA-Z][a-zA-Z0-9_.-]*)\s+", prompt)
                     if model_match:
                         candidate = model_match.group(1).lower()

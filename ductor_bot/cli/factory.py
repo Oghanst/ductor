@@ -22,6 +22,11 @@ def create_cli(config: CLIConfig) -> BaseCLI:
 
         return CodexCLI(config)
 
+    if config.provider == "cfuse":
+        from ductor_bot.cli.cfuse_provider import CfuseCLI
+
+        return CfuseCLI(config)
+
     from ductor_bot.cli.claude_provider import ClaudeCodeCLI
 
     return ClaudeCodeCLI(config)

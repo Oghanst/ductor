@@ -177,6 +177,35 @@ class TestTelegramBotInit:
         with pytest.raises(RuntimeError, match="Orchestrator not initialized"):
             _ = tg_bot._orch
 
+    def test_uses_trust_env_session_when_proxy_env_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from ductor_bot.bot.app import TelegramBot
+
+        bot_instance = MagicMock()
+        bot_instance.delete_webhook = AsyncMock()
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+        with (
+            patch("ductor_bot.bot.app.Bot", return_value=bot_instance) as mock_bot,
+            patch("ductor_bot.bot.app._TrustEnvAiohttpSession", return_value=MagicMock()) as mock_sess,
+        ):
+            TelegramBot(_make_config())
+
+        mock_sess.assert_called_once_with()
+        assert mock_bot.call_args.kwargs["session"] is mock_sess.return_value
+
+    def test_omits_custom_session_without_proxy_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from ductor_bot.bot.app import TelegramBot
+
+        bot_instance = MagicMock()
+        bot_instance.delete_webhook = AsyncMock()
+        for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+            monkeypatch.delenv(key, raising=False)
+        with patch("ductor_bot.bot.app.Bot", return_value=bot_instance) as mock_bot:
+            TelegramBot(_make_config())
+
+        assert mock_bot.call_args.kwargs["session"] is None
+
 
 class TestTelegramBotRun:
     async def test_run_returns_exit_code(self) -> None:

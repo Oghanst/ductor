@@ -101,13 +101,15 @@ def _build_auth_block(auth_results: dict[str, AuthResult], config: AgentConfig) 
         providers.append("Claude Code")
     if codex_ok:
         providers.append("Codex")
+    if auth_results.get("cfuse", None) and auth_results["cfuse"].is_authenticated:
+        providers.append("CodeFuse")
     if gemini_ok:
         providers.append("Gemini")
 
     if not providers:
         return (
             "No CLI authenticated yet. "
-            "Run `claude auth`, `codex auth`, or authenticate in `gemini` to get started."
+            "Run `claude auth`, `codex auth`, authenticate in `cfuse`, or authenticate in `gemini` to get started."
         )
 
     auth_line = " + ".join(providers) + " authenticated."

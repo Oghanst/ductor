@@ -9,6 +9,7 @@ from ductor_bot.cli.auth import (
     AuthResult,
     AuthStatus,
     check_claude_auth,
+    check_cfuse_auth,
     check_codex_auth,
     check_gemini_auth,
     format_age,
@@ -225,6 +226,40 @@ def test_check_codex_auth_config_toml_installed(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     result = check_codex_auth()
     assert result.status == AuthStatus.INSTALLED
+
+
+def test_check_cfuse_auth_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "which", lambda _: None)
+    result = check_cfuse_auth()
+    assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_check_cfuse_auth_installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "which", lambda _: "/usr/bin/cfuse")
+    result = check_cfuse_auth()
+    assert result.status == AuthStatus.INSTALLED
+
+
+def test_check_cfuse_auth_authenticated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_auth_mod, "which", lambda _: "/usr/bin/cfuse")
+    cfuse_dir = tmp_path / ".cfuse"
+    cfuse_dir.mkdir()
+    settings = cfuse_dir / "settings.json"
+    settings.write_text(
+        '{"security":{"auth":{"selectedType":"ant-family"}},"workid":"444541","token":"abc"}'
+    )
+    result = check_cfuse_auth()
+    assert result.status == AuthStatus.AUTHENTICATED
+    assert result.auth_file == settings
 
 
 # -- Gemini auth --

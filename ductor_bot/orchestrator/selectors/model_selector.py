@@ -169,6 +169,8 @@ async def model_selector_start(
         buttons.append(Button(text="CLAUDE", callback_data="ms:p:claude"))
     if "codex" in authed:
         buttons.append(Button(text="CODEX", callback_data="ms:p:codex"))
+    if "cfuse" in authed:
+        buttons.append(Button(text="CFUSE", callback_data="ms:p:cfuse"))
     if "gemini" in authed:
         buttons.append(Button(text="GEMINI", callback_data="ms:p:gemini"))
 
@@ -359,6 +361,16 @@ async def _build_model_step(
         gemini_rows.append([Button(text="<< Back", callback_data="ms:b:root")])
         keyboard = ButtonGrid(rows=gemini_rows)
         return SelectorResponse(text=f"{header}\n\nSelect Gemini model:", buttons=keyboard)
+
+    if provider == "cfuse":
+        return SelectorResponse(
+            text=f"{header}\n\nCfuse model discovery is not available yet. Edit config to change models.",
+            buttons=ButtonGrid(
+                rows=[
+                    [Button(text="<< Back", callback_data="ms:b:root")],
+                ]
+            ),
+        )
 
     # Use cache instead of live discovery
     codex_models = codex_cache.models if codex_cache else []

@@ -117,6 +117,11 @@ def test_registry_provider_for_codex() -> None:
     assert reg.provider_for("o3") == "codex"
 
 
+def test_registry_provider_for_cfuse_prefix() -> None:
+    reg = ModelRegistry()
+    assert reg.provider_for("antchat/Qwen3-Coder-480B-A35B-Instruct") == "cfuse"
+
+
 def test_registry_provider_for_gemini_prefix() -> None:
     reg = ModelRegistry()
     set_gemini_models(frozenset())

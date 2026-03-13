@@ -17,7 +17,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from ductor_bot.cli.auth import AuthStatus, check_claude_auth, check_codex_auth, check_gemini_auth
+from ductor_bot.cli.auth import (
+    AuthResult,
+    AuthStatus,
+    check_cfuse_auth,
+    check_claude_auth,
+    check_codex_auth,
+    check_gemini_auth,
+)
 from ductor_bot.config import DEFAULT_EMPTY_GEMINI_API_KEY, AgentConfig, deep_merge_config
 from ductor_bot.workspace.init import init_workspace
 from ductor_bot.workspace.paths import resolve_paths
@@ -94,20 +101,48 @@ _STATUS_ICON = {
 }
 
 
-def _check_clis(console: Console) -> None:
+def _default_model_for_provider(provider: str) -> str:
+    """Return the onboarding default model for a provider."""
+    if provider == "codex":
+        return "gpt-5.2-codex"
+    if provider == "cfuse":
+        return "antchat/Qwen3-Coder-480B-A35B-Instruct"
+    if provider == "gemini":
+        return "auto"
+    return "sonnet"
+
+
+def _select_onboarding_provider(auth_results: dict[str, AuthResult]) -> tuple[str, str]:
+    """Pick the first authenticated provider and its default model."""
+    for provider in ("codex", "claude", "cfuse", "gemini"):
+        result = auth_results.get(provider)
+        if result is not None and result.is_authenticated:
+            return provider, _default_model_for_provider(provider)
+    return "claude", _default_model_for_provider("claude")
+
+
+def _check_clis(console: Console) -> dict[str, AuthResult]:
     """Detect CLI availability and require at least one authenticated provider."""
     claude = check_claude_auth()
     codex = check_codex_auth()
+    cfuse = check_cfuse_auth()
     gemini = check_gemini_auth()
+    auth_results = {
+        "claude": claude,
+        "codex": codex,
+        "cfuse": cfuse,
+        "gemini": gemini,
+    }
 
     lines = [
         "[bold]Detected AI Backends:[/bold]\n",
         f"  Claude Code CLI   {_STATUS_ICON[claude.status]}",
         f"  OpenAI Codex CLI  {_STATUS_ICON[codex.status]}",
+        f"  CodeFuse CLI      {_STATUS_ICON[cfuse.status]}",
         f"  Google Gemini CLI {_STATUS_ICON[gemini.status]}",
     ]
 
-    has_auth = claude.is_authenticated or codex.is_authenticated or gemini.is_authenticated
+    has_auth = any(result.is_authenticated for result in auth_results.values())
 
     if has_auth:
         border = "green"
@@ -117,6 +152,7 @@ def _check_clis(console: Console) -> None:
             "\n[bold red]At least one CLI must be installed and authenticated.[/bold red]\n\n"
             "  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]\n"
             "  Codex:  [dim]https://github.com/openai/codex[/dim]\n"
+            "  Cfuse:  [dim]CodeFuse CLI[/dim]\n"
             "  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"
         )
 
@@ -132,6 +168,7 @@ def _check_clis(console: Console) -> None:
     if not has_auth:
         console.print()
         _abort()
+    return auth_results
 
 
 def _show_disclaimer(console: Console) -> None:
@@ -346,6 +383,8 @@ def _write_config(
     allowed_user_ids: list[int],
     user_timezone: str,
     docker_enabled: bool,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> Path:
     """Write the config file with wizard values merged into defaults."""
     paths = resolve_paths()
@@ -370,6 +409,10 @@ def _write_config(
     merged["telegram_token"] = telegram_token
     merged["allowed_user_ids"] = allowed_user_ids
     merged["user_timezone"] = user_timezone
+    if provider:
+        merged["provider"] = provider
+    if model:
+        merged["model"] = model
     docker_section = merged.get("docker")
     if isinstance(docker_section, dict):
         docker_section["enabled"] = docker_enabled
@@ -390,7 +433,7 @@ def run_onboarding() -> bool:
     console.print()
     _show_banner(console)
 
-    _check_clis(console)
+    auth_results = _check_clis(console)
     console.print()
 
     _show_disclaimer(console)
@@ -408,11 +451,14 @@ def run_onboarding() -> bool:
     timezone = _ask_timezone(console)
     console.print()
 
+    provider, model = _select_onboarding_provider(auth_results)
     config_path = _write_config(
         telegram_token=token,
         allowed_user_ids=user_ids,
         user_timezone=timezone,
         docker_enabled=docker_enabled,
+        provider=provider,
+        model=model,
     )
 
     paths = resolve_paths()
@@ -428,6 +474,8 @@ def run_onboarding() -> bool:
             f"  Config:     [cyan]{config_path}[/cyan]\n"
             f"  Workspace:  [cyan]{paths.workspace}[/cyan]\n"
             f"  Logs:       [cyan]{paths.logs_dir}[/cyan]\n\n"
+            f"  Provider:   [cyan]{provider}[/cyan]\n"
+            f"  Model:      [cyan]{model}[/cyan]\n\n"
             + ("Installing service..." if run_as_service else "Starting bot..."),
             title="[bold green]Ready[/bold green]",
             border_style="green",

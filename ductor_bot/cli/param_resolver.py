@@ -98,6 +98,10 @@ def resolve_cli_config(
             raise DuctorError(msg)
     elif provider == "gemini":
         _validate_gemini_model(model)
+    elif provider == "cfuse":
+        if not model.strip():
+            msg = "Cfuse model must not be empty"
+            raise DuctorError(msg)
     else:  # codex
         if codex_cache is None:
             msg = "Codex cache is required for Codex model validation"

@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -16,10 +17,12 @@ from rich.table import Table
 from rich.text import Text
 
 from ductor_bot.cli_commands.api_cmd import api_install_hint, nacl_available
+from ductor_bot.config import ModelRegistry
 from ductor_bot.infra.json_store import atomic_json_save
 from ductor_bot.workspace.paths import DuctorPaths, resolve_paths
 
 _console = Console()
+logger = logging.getLogger(__name__)
 
 _LOCAL_SUBCOMMANDS = frozenset({"chat"})
 _STATE_FILENAME = "local_chat.json"
@@ -376,6 +379,9 @@ def local_chat(rest: list[str]) -> None:
         asyncio.run(_run_chat(settings))
     except KeyboardInterrupt:
         _console.print("\n[dim]Local chat interrupted.[/dim]")
+    except Exception as exc:
+        logger.exception("Local chat crashed")
+        _console.print(f"\n[bold red]Local chat crashed:[/bold red] {exc}")
 
 
 def _render_screen(
@@ -417,7 +423,9 @@ def _render_screen(
     if runtime.last_error:
         status.append(f"Error: {runtime.last_error}\n")
 
-    commands = Text("/help  /abort  /telegram [token user_id[,user_id]]  /exit")
+    commands = Text(
+        "/help  /setup  /provider <name>  /model <id>  /abort  /telegram [token user_id[,user_id]]  /exit"
+    )
 
     _console.print(Panel(chat_body, title="Local Chat", border_style="blue"))
     _console.print(Panel(status, title="Status", border_style="green"))
@@ -474,6 +482,130 @@ def _update_telegram_config(paths: DuctorPaths, *, token: str, user_ids: list[in
     except OSError:
         return False
     return True
+
+
+def _telegram_configured(paths: DuctorPaths) -> bool:
+    """Return True when Telegram token + allowed users look configured."""
+    data = _load_full_config(paths)
+    token = data.get("telegram_token")
+    user_ids = data.get("allowed_user_ids")
+    return (
+        isinstance(token, str)
+        and _TELEGRAM_TOKEN_PATTERN.match(token) is not None
+        and isinstance(user_ids, list)
+        and any(isinstance(item, int) and item > 0 for item in user_ids)
+    )
+
+
+def _build_setup_message(settings: LocalChatSettings, runtime: ChatRuntime) -> str:
+    """Build the onboarding panel text shown by `/setup`."""
+    paths = resolve_paths(ductor_home=settings.ductor_home)
+    telegram_ready = _telegram_configured(paths)
+    telegram_status = "configured" if telegram_ready else "not configured"
+    provider = runtime.active_provider or "unknown"
+    model = runtime.active_model or "unknown"
+    return (
+        "Setup Panel\n\n"
+        f"DUCTOR_HOME: {settings.ductor_home}\n"
+        f"Active provider: {provider}\n"
+        f"Active model: {model}\n"
+        f"Telegram: {telegram_status}\n\n"
+        "Available setup actions:\n"
+        "1. Configure Telegram in-place:\n"
+        "   /telegram <token> <user_id[,user_id]>\n"
+        "2. Switch default provider:\n"
+        "   /provider cfuse\n"
+        "3. Switch default model:\n"
+        "   /model antchat/Qwen3-Coder-480B-A35B-Instruct\n"
+        "4. Abort the current run if needed:\n"
+        "   /abort\n"
+        "5. Exit local chat:\n"
+        "   /exit\n\n"
+        "Example:\n"
+        "/telegram 123456789:ABCDEF_your_token 123456789"
+    )
+
+
+def _default_model_for_provider(provider: str) -> str:
+    """Return the local-chat default model for a provider switch."""
+    if provider == "codex":
+        return "gpt-5.2-codex"
+    if provider == "cfuse":
+        return "antchat/Qwen3-Coder-480B-A35B-Instruct"
+    if provider == "gemini":
+        return "auto"
+    return "sonnet"
+
+
+def _update_provider_model_config(
+    paths: DuctorPaths,
+    *,
+    provider: str,
+    model: str,
+) -> bool:
+    """Persist provider/model changes for local-chat setup commands."""
+    data = _load_full_config(paths)
+    data["provider"] = provider
+    data["model"] = model
+    try:
+        atomic_json_save(paths.config_path, data)
+    except OSError:
+        return False
+    return True
+
+
+async def _handle_provider_switch(
+    raw_text: str,
+    settings: LocalChatSettings,
+    runtime: ChatRuntime,
+    messages: list[ChatMessage],
+) -> None:
+    parts = raw_text.split(maxsplit=1)
+    if len(parts) < 2:
+        _append_system(messages, "Usage: /provider claude|codex|cfuse|gemini")
+        return
+    provider = parts[1].strip().lower()
+    if provider not in {"claude", "codex", "cfuse", "gemini"}:
+        _append_system(messages, "Unsupported provider. Use one of: claude, codex, cfuse, gemini")
+        return
+    model = _default_model_for_provider(provider)
+    paths = resolve_paths(ductor_home=settings.ductor_home)
+    if not _update_provider_model_config(paths, provider=provider, model=model):
+        _append_system(messages, "Failed to persist provider/model config.")
+        return
+    runtime.active_provider = provider
+    runtime.active_model = model
+    _append_system(
+        messages,
+        f"Provider updated to {provider}. Model set to {model}. Hot reload may take up to 5 seconds.",
+    )
+
+
+async def _handle_model_switch(
+    raw_text: str,
+    settings: LocalChatSettings,
+    runtime: ChatRuntime,
+    messages: list[ChatMessage],
+) -> None:
+    parts = raw_text.split(maxsplit=1)
+    if len(parts) < 2:
+        _append_system(messages, "Usage: /model <model-id>")
+        return
+    model = parts[1].strip()
+    if not model:
+        _append_system(messages, "Model ID must not be empty.")
+        return
+    provider = ModelRegistry().provider_for(model)
+    paths = resolve_paths(ductor_home=settings.ductor_home)
+    if not _update_provider_model_config(paths, provider=provider, model=model):
+        _append_system(messages, "Failed to persist model config.")
+        return
+    runtime.active_provider = provider
+    runtime.active_model = model
+    _append_system(
+        messages,
+        f"Model updated to {model}. Provider inferred as {provider}. Hot reload may take up to 5 seconds.",
+    )
 
 
 async def _handle_telegram_onboard(
@@ -693,8 +825,17 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                 if text == "/help":
                     _append_system(
                         messages,
-                        "Commands: /help, /abort, /telegram [token user_id[,user_id]], /exit",
+                        "Commands: /help, /setup, /provider <name>, /model <id>, /abort, /telegram [token user_id[,user_id]], /exit",
                     )
+                    continue
+                if text == "/setup":
+                    _append_system(messages, _build_setup_message(settings, runtime))
+                    continue
+                if text.startswith("/provider"):
+                    await _handle_provider_switch(text, settings, runtime, messages)
+                    continue
+                if text.startswith("/model"):
+                    await _handle_model_switch(text, settings, runtime, messages)
                     continue
 
                 if text == "/abort":
@@ -727,7 +868,12 @@ async def _run_chat(settings: LocalChatSettings) -> None:
                         "Connection closed by server (likely runtime switching). Reconnect to continue.",
                     )
                     break
-                await _handle_stream(ws, e2e, messages, assistant_msg, runtime)
+                try:
+                    await _handle_stream(ws, e2e, messages, assistant_msg, runtime)
+                except Exception as exc:
+                    logger.exception("Local chat stream handling failed")
+                    runtime.last_error = str(exc)
+                    _append_system(messages, f"Local chat stream error: {exc}")
 
 
 async def _handle_abort(

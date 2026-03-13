@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ductor_bot.cli.init_wizard import _write_config, run_onboarding
+from ductor_bot.cli.auth import AuthResult, AuthStatus
+from ductor_bot.cli.init_wizard import (
+    _select_onboarding_provider,
+    _write_config,
+    run_onboarding,
+)
 from ductor_bot.workspace.paths import DuctorPaths
 
 
@@ -34,6 +39,8 @@ def test_write_config_ignores_corrupt_existing_json(tmp_path: Path) -> None:
             allowed_user_ids=[1234],
             user_timezone="UTC",
             docker_enabled=False,
+            provider="cfuse",
+            model="antchat/Qwen3-Coder-480B-A35B-Instruct",
         )
 
     assert out == paths.config_path
@@ -42,6 +49,8 @@ def test_write_config_ignores_corrupt_existing_json(tmp_path: Path) -> None:
     assert data["allowed_user_ids"] == [1234]
     assert data["user_timezone"] == "UTC"
     assert data["gemini_api_key"] == "null"
+    assert data["provider"] == "cfuse"
+    assert data["model"] == "antchat/Qwen3-Coder-480B-A35B-Instruct"
 
 
 def test_write_config_normalizes_existing_null_gemini_api_key(tmp_path: Path) -> None:
@@ -58,10 +67,36 @@ def test_write_config_normalizes_existing_null_gemini_api_key(tmp_path: Path) ->
             allowed_user_ids=[1234],
             user_timezone="UTC",
             docker_enabled=False,
+            provider="cfuse",
+            model="antchat/Qwen3-Coder-480B-A35B-Instruct",
         )
 
     data = json.loads(paths.config_path.read_text(encoding="utf-8"))
     assert data["gemini_api_key"] == "null"
+
+
+def test_select_onboarding_provider_prefers_authenticated_order() -> None:
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
+        "codex": AuthResult(provider="codex", status=AuthStatus.NOT_FOUND),
+        "cfuse": AuthResult(provider="cfuse", status=AuthStatus.AUTHENTICATED),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.AUTHENTICATED),
+    }
+    provider, model = _select_onboarding_provider(auth)
+    assert provider == "claude"
+    assert model == "sonnet"
+
+
+def test_select_onboarding_provider_handles_cfuse() -> None:
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.NOT_FOUND),
+        "codex": AuthResult(provider="codex", status=AuthStatus.NOT_FOUND),
+        "cfuse": AuthResult(provider="cfuse", status=AuthStatus.AUTHENTICATED),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.NOT_FOUND),
+    }
+    provider, model = _select_onboarding_provider(auth)
+    assert provider == "cfuse"
+    assert model == "antchat/Qwen3-Coder-480B-A35B-Instruct"
 
 
 def test_run_onboarding_returns_false_when_service_install_fails(tmp_path: Path) -> None:
@@ -69,7 +104,10 @@ def test_run_onboarding_returns_false_when_service_install_fails(tmp_path: Path)
 
     with (
         patch("ductor_bot.cli.init_wizard._show_banner"),
-        patch("ductor_bot.cli.init_wizard._check_clis"),
+        patch(
+            "ductor_bot.cli.init_wizard._check_clis",
+            return_value={"cfuse": AuthResult(provider="cfuse", status=AuthStatus.AUTHENTICATED)},
+        ),
         patch("ductor_bot.cli.init_wizard._show_disclaimer"),
         patch("ductor_bot.cli.init_wizard._ask_telegram_token", return_value="token"),
         patch("ductor_bot.cli.init_wizard._ask_user_id", return_value=[1]),
@@ -88,7 +126,10 @@ def test_run_onboarding_returns_true_when_service_install_succeeds(tmp_path: Pat
 
     with (
         patch("ductor_bot.cli.init_wizard._show_banner"),
-        patch("ductor_bot.cli.init_wizard._check_clis"),
+        patch(
+            "ductor_bot.cli.init_wizard._check_clis",
+            return_value={"cfuse": AuthResult(provider="cfuse", status=AuthStatus.AUTHENTICATED)},
+        ),
         patch("ductor_bot.cli.init_wizard._show_disclaimer"),
         patch("ductor_bot.cli.init_wizard._ask_telegram_token", return_value="token"),
         patch("ductor_bot.cli.init_wizard._ask_user_id", return_value=[1]),

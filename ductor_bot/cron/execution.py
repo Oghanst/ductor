@@ -90,6 +90,13 @@ def parse_codex_result(stdout: bytes) -> str:
     return raw[:2000]
 
 
+def parse_cfuse_result(stdout: bytes) -> str:
+    """Extract result text from cfuse output."""
+    if not stdout:
+        return ""
+    return stdout.decode(errors="replace").strip()[:2000]
+
+
 def parse_result(provider: str, stdout: bytes) -> str:
     """Extract result text from provider-specific CLI output."""
     parser = _RESULT_PARSERS.get(provider, parse_claude_result)
@@ -173,6 +180,29 @@ def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCo
     return OneShotCommand(cmd=cmd)
 
 
+def _build_cfuse_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+    """Build a cfuse CLI command for one-shot cron execution."""
+    cli = which("cfuse")
+    if not cli:
+        return None
+    cmd = [
+        cli,
+        "-C",
+        exec_config.working_dir,
+        "-o",
+        "text",
+        "--approval-mode",
+        "yolo" if exec_config.permission_mode == "bypassPermissions" else "default",
+    ]
+    if exec_config.model:
+        cmd += ["-m", exec_config.model]
+    if exec_config.file_access != "all":
+        cmd.append("-s")
+    cmd.extend(exec_config.cli_parameters)
+    cmd.append(prompt)
+    return OneShotCommand(cmd=cmd)
+
+
 _CmdBuilder = Callable[[TaskExecutionConfig, str], OneShotCommand | None]
 _ResultParser = Callable[[bytes], str]
 
@@ -180,12 +210,14 @@ _CMD_BUILDERS: dict[str, _CmdBuilder] = {
     "claude": _build_claude_cmd,
     "gemini": _build_gemini_cmd,
     "codex": _build_codex_cmd,
+    "cfuse": _build_cfuse_cmd,
 }
 
 _RESULT_PARSERS: dict[str, _ResultParser] = {
     "claude": parse_claude_result,
     "gemini": parse_gemini_result,
     "codex": parse_codex_result,
+    "cfuse": parse_cfuse_result,
 }
 
 

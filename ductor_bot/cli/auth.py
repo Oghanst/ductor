@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum, unique
 from pathlib import Path
+from shutil import which
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.gemini_utils import find_gemini_cli
@@ -160,6 +161,44 @@ def check_codex_auth() -> AuthResult:
         return result
 
     result = AuthResult("codex", AuthStatus.NOT_FOUND)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
+def check_cfuse_auth() -> AuthResult:
+    """Check CodeFuse CLI auth via local settings file and PATH presence."""
+    settings_file = Path.home() / ".cfuse" / "settings.json"
+    if settings_file.is_file():
+        try:
+            data = json.loads(settings_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            data = {}
+
+        if isinstance(data, dict):
+            token = data.get("token")
+            workid = data.get("workid")
+            selected_type = (
+                data.get("security", {})
+                .get("auth", {})
+                .get("selectedType")
+                if isinstance(data.get("security"), dict)
+                else None
+            )
+            if any(
+                isinstance(value, str) and value.strip()
+                for value in (token, workid, selected_type)
+            ):
+                mtime = datetime.fromtimestamp(settings_file.stat().st_mtime, tz=UTC)
+                result = AuthResult("cfuse", AuthStatus.AUTHENTICATED, settings_file, mtime)
+                logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+                return result
+
+    if which("cfuse"):
+        result = AuthResult("cfuse", AuthStatus.INSTALLED)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    result = AuthResult("cfuse", AuthStatus.NOT_FOUND)
     logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
     return result
 
@@ -400,6 +439,7 @@ def _normalize_key_like_value(raw: str) -> str:
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
+    "cfuse": check_cfuse_auth,
     "gemini": check_gemini_auth,
 }
 

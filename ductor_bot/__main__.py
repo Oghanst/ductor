@@ -145,6 +145,8 @@ def _has_valid_telegram_config(config: AgentConfig) -> bool:
 def _fallback_model_for_provider(provider: str) -> str:
     if provider == "codex":
         return "gpt-5.2-codex"
+    if provider == "cfuse":
+        return "antchat/Qwen3-Coder-480B-A35B-Instruct"
     if provider == "gemini":
         return "auto"
     return "sonnet"
@@ -161,7 +163,7 @@ def _auto_select_authenticated_provider(config: AgentConfig, *, config_path: Pat
     if config.provider in authenticated:
         return
 
-    for candidate in ("codex", "claude", "gemini"):
+    for candidate in ("codex", "claude", "cfuse", "gemini"):
         if candidate in authenticated:
             selected = candidate
             break

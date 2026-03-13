@@ -10,6 +10,7 @@ from ductor_bot.cli.param_resolver import TaskExecutionConfig
 from ductor_bot.cron.execution import (
     OneShotCommand,
     build_cmd,
+    parse_cfuse_result,
     enrich_instruction,
     execute_one_shot,
     indent,
@@ -127,6 +128,27 @@ class TestBuildCmd:
             side_effect=FileNotFoundError("not found"),
         ):
             assert build_cmd(exec_config, "hello") is None
+
+    def test_cfuse_provider(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="cfuse",
+            model="antchat/Qwen3-Coder-480B-A35B-Instruct",
+            reasoning_effort="",
+            cli_parameters=["--skip-hooks"],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="workspace",
+        )
+        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/cfuse"):
+            result = build_cmd(exec_config, "hello")
+        assert result is not None
+        assert result.cmd[0] == "/usr/bin/cfuse"
+        assert "-C" in result.cmd
+        assert "--approval-mode" in result.cmd
+        assert "yolo" in result.cmd
+        assert "-s" in result.cmd
+        assert result.cmd[-1] == "hello"
+        assert result.stdin_input is None
 
     def test_unknown_provider_falls_back_to_claude(self) -> None:
         exec_config = TaskExecutionConfig(
@@ -259,6 +281,14 @@ class TestParseGemini:
     def test_non_json_returns_raw(self) -> None:
         raw = b"Raw gemini output"
         assert parse_gemini_result(raw) == "Raw gemini output"
+
+
+class TestParseCfuse:
+    def test_empty_bytes(self) -> None:
+        assert parse_cfuse_result(b"") == ""
+
+    def test_plain_text(self) -> None:
+        assert parse_cfuse_result(b"cfuse result\n") == "cfuse result"
 
 
 class TestParseResult:

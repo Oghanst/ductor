@@ -112,6 +112,7 @@ class CLIParametersConfig(BaseModel):
 
     claude: list[str] = Field(default_factory=list)
     codex: list[str] = Field(default_factory=list)
+    cfuse: list[str] = Field(default_factory=list)
     gemini: list[str] = Field(default_factory=list)
 
 
@@ -391,6 +392,7 @@ CLAUDE_MODELS: frozenset[str] = frozenset(CLAUDE_MODELS_ORDERED)
 
 # "auto" is a Gemini-specific alias (Gemini CLI auto-selects the best model).
 _GEMINI_ALIASES: frozenset[str] = frozenset({"auto", "pro", "flash", "flash-lite"})
+_CFUSE_MODEL_PREFIXES: tuple[str, ...] = ("antchat/", "codefuse/", "cfuse-")
 
 _runtime_gemini: list[frozenset[str]] = [frozenset()]
 
@@ -408,6 +410,8 @@ class ModelRegistry:
         """Return the provider for a model ID."""
         if model_id in CLAUDE_MODELS:
             return "claude"
+        if model_id.startswith(_CFUSE_MODEL_PREFIXES):
+            return "cfuse"
         if (
             model_id in _GEMINI_ALIASES
             or model_id in _runtime_gemini[0]

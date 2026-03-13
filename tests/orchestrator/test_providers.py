@@ -57,6 +57,12 @@ class TestResolveRuntimeTarget:
         assert model == "o3-mini"
         assert provider == "codex"
 
+    def test_default_respects_configured_provider(self) -> None:
+        pm = _pm(model="antchat/Qwen3-Coder-480B-A35B-Instruct", provider="cfuse")
+        model, provider = pm.resolve_runtime_target()
+        assert model == "antchat/Qwen3-Coder-480B-A35B-Instruct"
+        assert provider == "cfuse"
+
     def test_none_falls_back_to_config(self) -> None:
         pm = _pm(model="haiku")
         model, provider = pm.resolve_runtime_target(None)
@@ -89,6 +95,13 @@ class TestResolveSessionDirective:
         result = pm.resolve_session_directive("codex")
         assert result is not None
         assert result[0] == "codex"
+
+    def test_provider_name_cfuse(self) -> None:
+        pm = _pm(model="antchat/Qwen3-Coder-480B-A35B-Instruct", provider="cfuse")
+        result = pm.resolve_session_directive("cfuse")
+        assert result is not None
+        assert result[0] == "cfuse"
+        assert result[1] == "antchat/Qwen3-Coder-480B-A35B-Instruct"
 
     def test_known_model(self) -> None:
         pm = _pm()
@@ -179,6 +192,10 @@ class TestDefaultModelForProvider:
         pm = _pm()
         assert pm.default_model_for_provider("unknown") == ""
 
+    def test_cfuse(self) -> None:
+        pm = _pm(model="antchat/Qwen3-Coder-480B-A35B-Instruct", provider="cfuse")
+        assert pm.default_model_for_provider("cfuse") == "antchat/Qwen3-Coder-480B-A35B-Instruct"
+
 
 # ---------------------------------------------------------------------------
 # apply_auth_results
@@ -250,6 +267,10 @@ class TestActiveProviderName:
     def test_codex(self) -> None:
         pm = _pm(model="o3-mini", provider="codex")
         assert pm.active_provider_name == "Codex"
+
+    def test_cfuse(self) -> None:
+        pm = _pm(model="antchat/Qwen3-Coder-480B-A35B-Instruct", provider="cfuse")
+        assert pm.active_provider_name == "CodeFuse"
 
 
 # ---------------------------------------------------------------------------

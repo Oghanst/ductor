@@ -91,6 +91,7 @@ class CLIServiceConfig:
     docker_container: str = ""
     claude_cli_parameters: tuple[str, ...] = ()
     codex_cli_parameters: tuple[str, ...] = ()
+    cfuse_cli_parameters: tuple[str, ...] = ()
     gemini_cli_parameters: tuple[str, ...] = ()
     agent_name: str = "main"
     interagent_port: int = 8799
@@ -99,6 +100,8 @@ class CLIServiceConfig:
         """Return CLI parameters for the given provider."""
         if provider == "codex":
             return list(self.codex_cli_parameters)
+        if provider == "cfuse":
+            return list(self.cfuse_cli_parameters)
         if provider == "gemini":
             return list(self.gemini_cli_parameters)
         return list(self.claude_cli_parameters)
@@ -300,8 +303,9 @@ class CLIService:
         """Return ``(provider, model)`` that would be used for *request*."""
         if request.provider_override:
             return request.provider_override, request.model_override or ""
-        model = request.model_override or self._config.default_model
-        return self._models.provider_for(model), model
+        if request.model_override:
+            return self._models.provider_for(request.model_override), request.model_override
+        return self._config.provider, self._config.default_model
 
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""
